@@ -21,11 +21,11 @@ class QuestPackImportFlowTest {
         val firstImport = repository.importQuestPack(fullParuchanPack())
         val reloaded = QuestLogRepository(File(temp.root, "restored.json")).restoreBackup(repository.exportBackup())
 
-        assertEquals(4, firstImport.imported)
+        assertEquals(5, firstImport.imported)
         assertEquals(0, firstImport.updated)
         assertEquals(0, firstImport.skipped)
         assertTrue(firstImport.errors.isEmpty())
-        assertEquals(4, reloaded.quests.size)
+        assertEquals(5, reloaded.quests.size)
 
         val oneOff = reloaded.quests.first { it.id == "full-once" }
         assertEquals("Find a paruchan sticker", oneOff.title)
@@ -35,6 +35,7 @@ class QuestPackImportFlowTest {
         assertEquals("paruchan", oneOff.icon)
         assertFalse(oneOff.repeatable)
         assertEquals("once", oneOff.cadence)
+        assertEquals("completion", oneOff.goalType)
         assertEquals(3, oneOff.goalTarget)
         assertEquals("sticker", oneOff.goalUnit)
         assertEquals(15, oneOff.timerMinutes)
@@ -43,6 +44,7 @@ class QuestPackImportFlowTest {
 
         val daily = reloaded.quests.first { it.id == "full-daily" }
         assertEquals("daily", daily.cadence)
+        assertEquals("completion", daily.goalType)
         assertFalse(daily.repeatable)
         assertEquals(2, daily.goalTarget)
         assertEquals("cup", daily.goalUnit)
@@ -50,18 +52,28 @@ class QuestPackImportFlowTest {
 
         val repeatable = reloaded.quests.first { it.id == "full-repeatable" }
         assertEquals("repeatable", repeatable.cadence)
+        assertEquals("completion", repeatable.goalType)
         assertTrue(repeatable.repeatable)
         assertEquals(1, repeatable.goalTarget)
         assertEquals("completion", repeatable.goalUnit)
         assertNull(repeatable.timerMinutes)
 
         val counter = reloaded.quests.first { it.id == "full-counter" }
-        assertEquals("counter", counter.cadence)
+        assertEquals("once", counter.cadence)
+        assertEquals("counter", counter.goalType)
         assertFalse(counter.repeatable)
         assertEquals(40, counter.xp)
-        assertEquals(1, counter.goalTarget)
+        assertEquals(10, counter.goalTarget)
         assertEquals("page", counter.goalUnit)
-        assertEquals(30, counter.timerMinutes)
+        assertNull(counter.timerMinutes)
+
+        val timer = reloaded.quests.first { it.id == "full-timer" }
+        assertEquals("once", timer.cadence)
+        assertEquals("timer", timer.goalType)
+        assertEquals(90, timer.xp)
+        assertEquals(30, timer.goalTarget)
+        assertEquals("minute", timer.goalUnit)
+        assertNull(timer.timerMinutes)
     }
 
     @Test
@@ -78,9 +90,9 @@ class QuestPackImportFlowTest {
         val reloaded = repository.load()
 
         assertEquals(0, secondImport.imported)
-        assertEquals(4, secondImport.updated)
+        assertEquals(5, secondImport.updated)
         assertEquals(0, secondImport.skipped)
-        assertEquals(4, reloaded.quests.size)
+        assertEquals(5, reloaded.quests.size)
         assertEquals(175, reloaded.quests.first { it.id == "full-once" }.xp)
     }
 
@@ -98,6 +110,7 @@ class QuestPackImportFlowTest {
               "category": "Paruchan",
               "icon": "paruchan",
               "cadence": "once",
+              "goalType": "completion",
               "goalTarget": 3,
               "goalUnit": "sticker",
               "timerMinutes": 15,
@@ -112,6 +125,7 @@ class QuestPackImportFlowTest {
               "category": "Paruchan",
               "icon": "star",
               "cadence": "daily",
+              "goalType": "completion",
               "goalTarget": 2,
               "goalUnit": "cup",
               "timerMinutes": 5
@@ -124,6 +138,7 @@ class QuestPackImportFlowTest {
               "category": "Paruchan",
               "icon": "heart",
               "repeatable": true,
+              "goalType": "completion",
               "goalTarget": 1,
               "goalUnit": "completion"
             },
@@ -131,12 +146,24 @@ class QuestPackImportFlowTest {
               "id": "full-counter",
               "title": "Read a quest page",
               "flavourText": "Every page counts.",
-              "xpPerUnit": 40,
+              "xp": 40,
               "category": "Reading",
               "icon": "book",
-              "counter": true,
-              "unit": "page",
-              "timerMinutes": 30
+              "cadence": "once",
+              "goalType": "counter",
+              "goalTarget": 10,
+              "goalUnit": "page"
+            },
+            {
+              "id": "full-timer",
+              "title": "Practice song",
+              "flavourText": "Record the minutes.",
+              "xp": 90,
+              "category": "Music",
+              "icon": "star",
+              "cadence": "once",
+              "goalType": "timer",
+              "goalTarget": 30
             }
           ]
         }

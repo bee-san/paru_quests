@@ -15,6 +15,7 @@ class QuestPackExporter(
     fun encodePack(name: String, quests: List<Quest>): String {
         val cleaned = quests.map { quest ->
             val cadence = QuestCadence.from(quest)
+            val goalType = QuestGoalType.from(quest)
             quest.copy(
                 id = quest.id.trim(),
                 title = quest.title.trim(),
@@ -24,9 +25,10 @@ class QuestPackExporter(
                 icon = quest.icon.trim().ifBlank { "star" },
                 repeatable = cadence == QuestCadence.Repeatable,
                 cadence = cadence.wireName,
+                goalType = goalType.wireName,
                 goalTarget = quest.goalTarget.coerceAtLeast(1),
-                goalUnit = quest.goalUnit.trim().ifBlank { "completion" },
-                timerMinutes = quest.timerMinutes?.coerceIn(1, 24 * 60),
+                goalUnit = normalizedGoalUnit(quest.goalUnit, goalType),
+                timerMinutes = if (goalType == QuestGoalType.Timer) null else quest.timerMinutes?.coerceIn(1, 24 * 60),
                 archived = false,
             )
         }.filter { it.title.isNotBlank() }
@@ -40,6 +42,15 @@ class QuestPackExporter(
                 quests = cleaned,
             )
         )
+    }
+
+    private fun normalizedGoalUnit(unit: String, goalType: QuestGoalType): String {
+        val cleaned = unit.trim()
+        return when (goalType) {
+            QuestGoalType.Counter -> cleaned.ifBlank { "unit" }
+            QuestGoalType.Timer -> "minute"
+            QuestGoalType.Completion -> cleaned.ifBlank { "completion" }
+        }
     }
 }
 

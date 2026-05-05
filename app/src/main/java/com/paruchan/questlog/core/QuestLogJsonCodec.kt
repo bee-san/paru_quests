@@ -36,16 +36,22 @@ class QuestLogJsonCodec(
     }
 
     fun normalize(state: QuestLogState): QuestLogState {
-        val levels = state.levels.orEmpty()
-            .ifEmpty { DefaultLevels.paruchan() }
-            .filter { it.level > 0 && it.xpRequired >= 0 }
-            .sortedWith(compareBy<Level> { it.xpRequired }.thenBy { it.level })
-            .ifEmpty { DefaultLevels.paruchan() }
+        val importedLevels = state.levels.orEmpty()
+        val levels = if (importedLevels.isEmpty() || DefaultLevels.isLegacyDefault(importedLevels)) {
+            DefaultLevels.paruchan()
+        } else {
+            importedLevels
+                .filter { it.level > 0 && it.xpRequired >= 0 }
+                .sortedWith(compareBy<Level> { it.xpRequired }.thenBy { it.level })
+                .ifEmpty { DefaultLevels.paruchan() }
+        }
 
         val quests = state.quests.orEmpty()
             .filter { it.id.isNotBlank() && it.title.isNotBlank() }
             .map { quest ->
+                val goalType = QuestGoalType.from(quest)
                 val cadence = QuestCadence.from(quest)
+                val target = normalizedGoalTarget(quest, goalType)
                 quest.copy(
                     title = quest.title.trim(),
                     flavourText = quest.flavourText.trim(),
@@ -54,9 +60,10 @@ class QuestLogJsonCodec(
                     xp = quest.xp.coerceAtLeast(0),
                     repeatable = cadence == QuestCadence.Repeatable,
                     cadence = cadence.wireName,
-                    goalTarget = quest.goalTarget.coerceAtLeast(1),
-                    goalUnit = quest.goalUnit.orEmpty().trim().ifBlank { "completion" },
-                    timerMinutes = quest.timerMinutes?.coerceIn(1, 24 * 60),
+                    goalType = goalType.wireName,
+                    goalTarget = target,
+                    goalUnit = normalizedGoalUnit(quest.goalUnit, goalType),
+                    timerMinutes = if (goalType == QuestGoalType.Timer) null else quest.timerMinutes?.coerceIn(1, 24 * 60),
                 )
             }
             .distinctBy { it.id }
@@ -96,4 +103,22 @@ class QuestLogJsonCodec(
     private fun JsonObject.int(name: String): Int? = runCatching {
         this[name]?.takeUnless { it.isJsonNull }?.asInt
     }.getOrNull()
+
+    private fun normalizedGoalTarget(quest: Quest, goalType: QuestGoalType): Int {
+        val target = quest.goalTarget.coerceAtLeast(1)
+        return if (goalType == QuestGoalType.Timer && target == 1) {
+            quest.timerMinutes?.coerceAtLeast(1) ?: target
+        } else {
+            target
+        }
+    }
+
+    private fun normalizedGoalUnit(unit: String?, goalType: QuestGoalType): String {
+        val cleaned = unit.orEmpty().trim()
+        return when (goalType) {
+            QuestGoalType.Counter -> cleaned.ifBlank { "unit" }
+            QuestGoalType.Timer -> "minute"
+            QuestGoalType.Completion -> cleaned.ifBlank { "completion" }
+        }
+    }
 }

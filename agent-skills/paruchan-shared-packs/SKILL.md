@@ -20,4 +20,4 @@ bash tools/encrypt_shared_pack.sh /tmp/plain-pack.json app/src/main/assets/share
 4. Commit only the encrypted asset, app code, and docs. Never commit `.env` or plaintext private packs.
 5. Bump the APK version and publish a normal GitHub release so Paru receives the encrypted pack through the app update.
 
-Use stable quest IDs in plaintext packs. Reusing an ID updates the quest on import while keeping local completions intact.
+Use stable quest IDs in plaintext packs. Reusing an ID updates the quest on import while keeping local completions intact. Quests outside the newly imported pack set are closed by archiving, without awarding XP.

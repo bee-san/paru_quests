@@ -29,6 +29,7 @@ class QuestPackExporterTest {
                     xp = 80,
                     category = "Home",
                     cadence = "daily",
+                    goalType = "completion",
                     goalTarget = 3,
                     goalUnit = "surface",
                     timerMinutes = 20,
@@ -44,8 +45,35 @@ class QuestPackExporterTest {
         assertEquals("2026-05-05T12:00:00Z", root["exportedAt"].asString)
         assertEquals("Tidy desk", quest["title"].asString)
         assertEquals("daily", quest["cadence"].asString)
+        assertEquals("completion", quest["goalType"].asString)
         assertEquals(3, quest["goalTarget"].asInt)
         assertEquals(20, quest["timerMinutes"].asInt)
+    }
+
+    @Test
+    fun `exports timer goals without foreground timer helper minutes`() {
+        val exporter = QuestPackExporter(clock = clock)
+
+        val json = exporter.encodePack(
+            name = "Timer Pack",
+            quests = listOf(
+                Quest(
+                    title = "Practice piano",
+                    xp = 80,
+                    goalType = "timer",
+                    goalTarget = 20,
+                    goalUnit = "minute",
+                    timerMinutes = 10,
+                )
+            ),
+        )
+
+        val quest = JsonParser.parseString(json).asJsonObject["quests"].asJsonArray.single().asJsonObject
+
+        assertEquals("timer", quest["goalType"].asString)
+        assertEquals(20, quest["goalTarget"].asInt)
+        assertEquals("minute", quest["goalUnit"].asString)
+        assertFalse(quest.has("timerMinutes"))
     }
 
     @Test

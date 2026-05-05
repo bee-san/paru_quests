@@ -12,6 +12,7 @@
       "icon": "paruchan",
       "repeatable": false,
       "cadence": "once",
+      "goalType": "completion",
       "goalTarget": 1,
       "goalUnit": "completion",
       "createdAt": "2026-05-05T00:00:00Z",

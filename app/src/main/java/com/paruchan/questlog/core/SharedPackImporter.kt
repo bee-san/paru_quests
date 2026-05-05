@@ -15,20 +15,23 @@ data class SharedPackMergeResult(
     val unchangedPacks: Int,
     val imported: Int,
     val updated: Int,
+    val closed: Int,
     val skipped: Int,
     val newMarkers: Set<String>,
     val errors: List<String> = emptyList(),
 ) {
     val changed: Boolean
-        get() = imported > 0 || updated > 0 || newMarkers.isNotEmpty()
+        get() = imported > 0 || updated > 0 || closed > 0 || newMarkers.isNotEmpty()
 
     val summary: String
         get() = when {
             totalPacks == 0 -> "No shared packs found"
             appliedPacks == 0 && errors.isEmpty() -> "Shared packs already up to date"
-            errors.isEmpty() -> "Shared packs: imported $imported, updated $updated, skipped $skipped"
-            else -> "Shared packs: imported $imported, updated $updated, skipped $skipped; ${errors.first()}"
+            errors.isEmpty() -> "Shared packs: imported $imported, updated $updated${closedSummary()}, skipped $skipped"
+            else -> "Shared packs: imported $imported, updated $updated${closedSummary()}, skipped $skipped; ${errors.first()}"
         }
+
+    private fun closedSummary(): String = if (closed > 0) ", closed $closed" else ""
 }
 
 class SharedPackImporter(
@@ -47,22 +50,30 @@ class SharedPackImporter(
         var unchangedPacks = 0
         var imported = 0
         var updated = 0
+        var closed = 0
         var skipped = 0
+        val incomingQuestIds = mutableSetOf<String>()
 
         assets.sortedBy { it.name }.forEach { asset ->
             runCatching {
                 val decrypted = EncryptedQuestPackCodec.decrypt(asset.json, password)
                 val marker = decrypted.importMarker()
                 if (marker in importedMarkers || marker in newMarkers) {
+                    incomingQuestIds += questPackImporter.questIdsInQuestPack(decrypted.questPackJson)
                     unchangedPacks++
                     return@forEach
                 }
 
-                val result = questPackImporter.mergeQuestPack(workingState, decrypted.questPackJson)
+                val result = questPackImporter.mergeQuestPack(
+                    state = workingState,
+                    json = decrypted.questPackJson,
+                    closePrevious = false,
+                )
                 workingState = result.state
                 imported += result.imported
                 updated += result.updated
                 skipped += result.skipped
+                incomingQuestIds += result.incomingQuestIds
                 errors += result.errors.map { "${decrypted.packId}: $it" }
 
                 if (result.errors.isEmpty()) {
@@ -75,6 +86,12 @@ class SharedPackImporter(
             }
         }
 
+        if (appliedPacks > 0 && incomingQuestIds.isNotEmpty() && errors.isEmpty()) {
+            val closeResult = questPackImporter.closeQuestsOutside(workingState, incomingQuestIds)
+            workingState = closeResult.state
+            closed = closeResult.closed
+        }
+
         return SharedPackMergeResult(
             state = workingState,
             totalPacks = assets.size,
@@ -82,6 +99,7 @@ class SharedPackImporter(
             unchangedPacks = unchangedPacks,
             imported = imported,
             updated = updated,
+            closed = closed,
             skipped = skipped,
             newMarkers = newMarkers,
             errors = errors,

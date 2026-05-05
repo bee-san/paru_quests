@@ -29,13 +29,16 @@ class QuestLogEngine(
             .filter { canComplete(state, it) }
             .sortedWith(
                 compareByDescending<Quest> { QuestCadence.from(it) == QuestCadence.Daily }
+                    .thenByDescending { QuestGoalType.from(it) == QuestGoalType.Timer }
                     .thenByDescending { it.timerMinutes != null }
                     .thenByDescending { it.goalTarget > 1 }
+                    .thenBy { QuestGoalType.from(it) == QuestGoalType.Counter }
                     .thenBy { it.title.lowercase() },
             )
 
     fun progressFor(state: QuestLogState, quest: Quest): QuestProgress {
         val cadence = QuestCadence.from(quest)
+        val goalType = QuestGoalType.from(quest)
         val target = quest.goalTarget.coerceAtLeast(1)
         val completions = state.completions
             .filter { it.questId == quest.id }
@@ -49,33 +52,26 @@ class QuestLogEngine(
             }
         val totalProgress = completions.sumOf { it.progressAmount.coerceAtLeast(1) }
         val completedCycles = totalProgress / target
-        val progressInCycle = when (cadence) {
-            QuestCadence.Counter -> totalProgress
-            QuestCadence.Repeatable -> totalProgress % target
-            QuestCadence.Daily,
-            QuestCadence.Once -> totalProgress.coerceAtMost(target)
-        }
-        val isComplete = when (cadence) {
-            QuestCadence.Counter,
-            QuestCadence.Repeatable -> false
-            QuestCadence.Daily,
-            QuestCadence.Once -> totalProgress >= target
+        val progressInCycle = when {
+            cadence == QuestCadence.Repeatable -> totalProgress % target
+            else -> totalProgress.coerceAtMost(target)
         }
 
         return QuestProgress(
             questId = quest.id,
             cadence = cadence,
+            goalType = goalType,
             target = target,
-            unit = quest.goalUnit.orEmpty().trim().ifBlank { "completion" },
+            unit = normalizedGoalUnit(quest.goalUnit, goalType),
             progressInCycle = progressInCycle,
             completedCycles = completedCycles,
-            isComplete = isComplete,
+            isComplete = cadence != QuestCadence.Repeatable && totalProgress >= target,
         )
     }
 
     fun canComplete(state: QuestLogState, quest: Quest): Boolean {
         if (quest.archived) return false
-        if (QuestCadence.from(quest) in setOf(QuestCadence.Repeatable, QuestCadence.Counter)) return true
+        if (QuestCadence.from(quest) == QuestCadence.Repeatable) return true
         return !progressFor(state, quest).isComplete
     }
 
@@ -93,17 +89,15 @@ class QuestLogEngine(
         }
 
         val progress = progressFor(state, quest)
-        val cadence = QuestCadence.from(quest)
+        val goalType = QuestGoalType.from(quest)
         val safeAmount = progressAmount.coerceAtLeast(1)
-        val recordedAmount = if (cadence == QuestCadence.Counter) safeAmount else 1
-        val willCompleteCycle = when (cadence) {
-            QuestCadence.Counter -> true
-            else -> progress.progressInCycle + recordedAmount >= progress.target
+        val recordedAmount = when (goalType) {
+            QuestGoalType.Counter -> 1
+            QuestGoalType.Timer -> safeAmount
+            QuestGoalType.Completion -> 1
         }
-        val xpAwarded = when (cadence) {
-            QuestCadence.Counter -> quest.xp.coerceAtLeast(0) * recordedAmount
-            else -> if (willCompleteCycle) quest.xp.coerceAtLeast(0) else 0
-        }
+        val willCompleteCycle = progress.progressInCycle + recordedAmount >= progress.target
+        val xpAwarded = if (willCompleteCycle) quest.xp.coerceAtLeast(0) else 0
         val completion = Completion(
             id = idFactory(),
             questId = quest.id,
@@ -117,11 +111,11 @@ class QuestLogEngine(
         return CompletionResult(
             state = state.copy(completions = state.completions + completion),
             completion = completion,
-            message = if (cadence == QuestCadence.Counter) {
-                val unit = pluralizeUnit(progress.unit, recordedAmount)
-                "Logged $recordedAmount $unit for ${completion.xpAwarded} XP"
-            } else if (willCompleteCycle) {
+            message = if (willCompleteCycle) {
                 "${quest.title} completed for ${completion.xpAwarded} XP"
+            } else if (goalType == QuestGoalType.Timer) {
+                val unit = pluralizeUnit(progress.unit, recordedAmount)
+                "${quest.title} logged $recordedAmount $unit. $nextProgress/${progress.target} ${pluralizeUnit(progress.unit, progress.target)}"
             } else {
                 "${quest.title} progress $nextProgress/${progress.target} ${progress.unit}"
             },
@@ -137,6 +131,15 @@ class QuestLogEngine(
 
     private fun pluralizeUnit(unit: String, amount: Int): String =
         if (amount == 1 || unit.endsWith("s", ignoreCase = true)) unit else "${unit}s"
+
+    private fun normalizedGoalUnit(unit: String?, goalType: QuestGoalType): String {
+        val cleaned = unit.orEmpty().trim()
+        return when (goalType) {
+            QuestGoalType.Counter -> cleaned.ifBlank { "unit" }
+            QuestGoalType.Timer -> "minute"
+            QuestGoalType.Completion -> cleaned.ifBlank { "completion" }
+        }
+    }
 }
 
 data class CompletionResult(

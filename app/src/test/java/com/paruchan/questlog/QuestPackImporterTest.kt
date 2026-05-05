@@ -1,9 +1,11 @@
 package com.paruchan.questlog
 
+import com.paruchan.questlog.core.Completion
 import com.paruchan.questlog.core.QuestLogState
 import com.paruchan.questlog.core.QuestPackImporter
 import com.paruchan.questlog.core.Quest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Clock
@@ -122,7 +124,7 @@ class QuestPackImporterTest {
     }
 
     @Test
-    fun `reimport preserves local archived state`() {
+    fun `imported quests are reopened when included in the latest pack`() {
         val existing = Quest(
             id = "local",
             title = "Local quest",
@@ -137,11 +139,64 @@ class QuestPackImporterTest {
 
         assertEquals(1, result.updated)
         assertEquals("Local quest updated", result.state.quests.single().title)
-        assertEquals(true, result.state.quests.single().archived)
+        assertFalse(result.state.quests.single().archived)
     }
 
     @Test
-    fun `imports daily goals and timers`() {
+    fun `import closes previous quests without awarding xp`() {
+        val previousCompletion = Completion(
+            id = "completion-1",
+            questId = "already-done",
+            completedAt = "2026-05-05T10:00:00Z",
+            xpAwarded = 40,
+        )
+        val state = QuestLogState(
+            quests = listOf(
+                Quest(id = "previous", title = "Previous quest", xp = 100),
+                Quest(id = "already-done", title = "Already done", xp = 40),
+            ),
+            completions = listOf(previousCompletion),
+        )
+
+        val result = importer.mergeQuestPack(
+            state,
+            """[{"id":"latest","title":"Latest quest","xp":25}]""",
+        )
+
+        val previous = result.state.quests.first { it.id == "previous" }
+        val alreadyDone = result.state.quests.first { it.id == "already-done" }
+        val latest = result.state.quests.first { it.id == "latest" }
+
+        assertEquals(1, result.imported)
+        assertEquals(2, result.closed)
+        assertTrue(previous.archived)
+        assertTrue(alreadyDone.archived)
+        assertFalse(latest.archived)
+        assertEquals(listOf(previousCompletion), result.state.completions)
+        assertEquals(40, result.state.completions.sumOf { it.xpAwarded })
+        assertEquals("Imported 1, updated 0, closed 2, skipped 0", result.summary)
+    }
+
+    @Test
+    fun `import with validation errors does not close previous quests`() {
+        val state = QuestLogState(
+            quests = listOf(Quest(id = "previous", title = "Previous quest", xp = 100)),
+        )
+
+        val result = importer.mergeQuestPack(
+            state,
+            """[{"id":"latest","title":"Latest quest","xp":25},{"id":"bad","title":"","xp":10}]""",
+        )
+
+        assertEquals(1, result.imported)
+        assertEquals(1, result.skipped)
+        assertEquals(0, result.closed)
+        assertFalse(result.state.quests.first { it.id == "previous" }.archived)
+        assertFalse(result.state.quests.first { it.id == "latest" }.archived)
+    }
+
+    @Test
+    fun `imports daily goals and timer helpers`() {
         val result = importer.mergeQuestPack(
             QuestLogState(),
             """
@@ -160,6 +215,7 @@ class QuestPackImporterTest {
 
         val quest = result.state.quests.single()
         assertEquals("daily", quest.cadence)
+        assertEquals("completion", quest.goalType)
         assertEquals(false, quest.repeatable)
         assertEquals(4, quest.goalTarget)
         assertEquals("room", quest.goalUnit)
@@ -167,7 +223,32 @@ class QuestPackImporterTest {
     }
 
     @Test
-    fun `imports counter quests with xp per unit`() {
+    fun `imports timer goals from required minutes`() {
+        val result = importer.mergeQuestPack(
+            QuestLogState(),
+            """
+            [
+              {
+                "title": "Practice for twenty minutes",
+                "xp": 80,
+                "category": "Music",
+                "goalType": "timer",
+                "timerMinutes": 20
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        val quest = result.state.quests.single()
+        assertEquals("once", quest.cadence)
+        assertEquals("timer", quest.goalType)
+        assertEquals(20, quest.goalTarget)
+        assertEquals("minute", quest.goalUnit)
+        assertEquals(null, quest.timerMinutes)
+    }
+
+    @Test
+    fun `imports legacy counter quests as finite counter goals`() {
         val result = importer.mergeQuestPack(
             QuestLogState(),
             """
@@ -195,12 +276,16 @@ class QuestPackImporterTest {
         val dog = result.state.quests.first { it.title == "Spot a dog" }
 
         assertEquals(2, result.imported)
-        assertEquals("counter", run.cadence)
+        assertEquals("once", run.cadence)
+        assertEquals("counter", run.goalType)
         assertEquals(100, run.xp)
+        assertEquals(1, run.goalTarget)
         assertEquals("mile", run.goalUnit)
         assertEquals(false, run.repeatable)
-        assertEquals("counter", dog.cadence)
+        assertEquals("once", dog.cadence)
+        assertEquals("counter", dog.goalType)
         assertEquals(10, dog.xp)
+        assertEquals(1, dog.goalTarget)
         assertEquals("dog", dog.goalUnit)
     }
 

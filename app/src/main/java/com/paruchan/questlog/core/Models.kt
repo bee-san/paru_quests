@@ -9,6 +9,7 @@ data class Quest(
     var icon: String = "star",
     var repeatable: Boolean = false,
     var cadence: String = QuestCadence.Once.wireName,
+    var goalType: String = QuestGoalType.Completion.wireName,
     var goalTarget: Int = 1,
     var goalUnit: String = "completion",
     var timerMinutes: Int? = null,
@@ -56,6 +57,7 @@ data class LevelProgress(
 data class QuestProgress(
     val questId: String,
     val cadence: QuestCadence,
+    val goalType: QuestGoalType,
     val target: Int,
     val unit: String,
     val progressInCycle: Int,
@@ -64,14 +66,13 @@ data class QuestProgress(
 ) {
     val remaining: Int = (target - progressInCycle).coerceAtLeast(0)
     val fraction: Float = if (target <= 0) 1f else (progressInCycle.toFloat() / target.toFloat()).coerceIn(0f, 1f)
-    val hasGoal: Boolean = target > 1
+    val hasGoal: Boolean = target > 1 || goalType != QuestGoalType.Completion
 }
 
 enum class QuestCadence(val wireName: String, val label: String) {
     Once("once", "One-off"),
     Daily("daily", "Daily"),
-    Repeatable("repeatable", "Repeatable"),
-    Counter("counter", "Counter");
+    Repeatable("repeatable", "Repeatable");
 
     companion object {
         fun from(quest: Quest): QuestCadence = from(quest.cadence, quest.repeatable)
@@ -80,8 +81,27 @@ enum class QuestCadence(val wireName: String, val label: String) {
             return when (value.orEmpty().trim().lowercase()) {
                 "daily", "day", "dailies" -> Daily
                 "repeatable", "repeat", "repeating", "weekly", "monthly" -> Repeatable
-                "counter", "count", "per", "per-unit", "per_unit" -> Counter
                 else -> if (repeatable) Repeatable else Once
+            }
+        }
+    }
+}
+
+enum class QuestGoalType(val wireName: String, val label: String) {
+    Completion("completion", "Completion"),
+    Counter("counter", "Counter"),
+    Timer("timer", "Timer");
+
+    companion object {
+        fun from(quest: Quest): QuestGoalType = from(quest.goalType, legacyCadence = quest.cadence)
+
+        fun from(value: String?, legacyCadence: String? = null): QuestGoalType {
+            val normalized = value.orEmpty().trim().lowercase()
+            return when {
+                normalized in setOf("counter", "count", "counted") -> Counter
+                normalized in setOf("timer", "timed", "time", "minutes", "minute") -> Timer
+                legacyCadence.orEmpty().trim().lowercase() in setOf("counter", "count", "per", "per-unit", "per_unit") -> Counter
+                else -> Completion
             }
         }
     }

@@ -2,6 +2,14 @@ package com.paruchan.questlog.ui
 
 import android.app.TimePickerDialog
 import android.text.format.DateFormat
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -20,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -86,8 +95,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -105,6 +117,7 @@ import com.paruchan.questlog.core.Completion
 import com.paruchan.questlog.core.LevelProgress
 import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestCadence
+import com.paruchan.questlog.core.QuestGoalType
 import com.paruchan.questlog.core.QuestProgress
 import com.paruchan.questlog.notification.QuestNotificationSettings
 import kotlinx.coroutines.delay
@@ -288,7 +301,132 @@ fun ParuchanQuestLogApp(
                         }
                     }
                 }
+                viewModel.completionCelebration?.let { celebration ->
+                    CompletionCelebrationOverlay(
+                        celebration = celebration,
+                        onDismiss = viewModel::clearCompletionCelebration,
+                    )
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun CompletionCelebrationOverlay(
+    celebration: CompletionCelebration,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+    var entered by remember(celebration.id) { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (entered) 1f else 0.92f,
+        animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+        label = "Completion celebration scale",
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = tween(durationMillis = 180),
+        label = "Completion celebration alpha",
+    )
+    val sparkleTransition = rememberInfiniteTransition(label = "Completion sparkles")
+    val sparklePhase by sparkleTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "Completion sparkle phase",
+    )
+
+    LaunchedEffect(celebration.id) {
+        entered = true
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        delay(1_600)
+        onDismiss()
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .clickable(onClick = onDismiss)
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .widthIn(max = 360.dp)
+                .heightIn(min = 176.dp)
+                .graphicsLayer {
+                    this.alpha = alpha
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFFFFFCF5), Color(0xFFF4E5F4), Color(0xFFFFF5DA)),
+                    )
+                )
+                .border(BorderStroke(2.dp, Gold), RoundedCornerShape(8.dp))
+                .padding(18.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            CompletionConfetti(phase = sparklePhase, modifier = Modifier.matchParentSize())
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Mascot(Modifier.size(58.dp))
+                DisplayText("Goal complete", 27.sp, Ink, FontWeight.Bold, maxLines = 1)
+                Text(
+                    text = celebration.questTitle,
+                    color = MutedInk,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                DisplayText("+${celebration.xpAwarded} XP", 30.sp, Plum, FontWeight.Bold, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompletionConfetti(phase: Float, modifier: Modifier = Modifier) {
+    Box(modifier = modifier) {
+        repeat(16) { index ->
+            val alignment = when (index % 8) {
+                0 -> Alignment.TopStart
+                1 -> Alignment.TopCenter
+                2 -> Alignment.TopEnd
+                3 -> Alignment.CenterEnd
+                4 -> Alignment.BottomEnd
+                5 -> Alignment.BottomCenter
+                6 -> Alignment.BottomStart
+                else -> Alignment.CenterStart
+            }
+            val color = when (index % 3) {
+                0 -> Gold
+                1 -> Lilac
+                else -> Rose
+            }
+            val size = (5 + (index % 4) * 2).dp
+            val xDrift = (((index % 5) - 2) * 5f * (0.4f + phase)).dp
+            val yDrift = ((phase * 18f) - 9f + (index % 3) * 2f).dp
+            val dotAlpha = (0.42f + (index % 4) * 0.12f + (1f - phase) * 0.12f).coerceIn(0.32f, 0.88f)
+            Box(
+                modifier = Modifier
+                    .align(alignment)
+                    .offset(x = xDrift, y = yDrift)
+                    .size(size)
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = dotAlpha)),
+            )
         }
     }
 }
@@ -371,11 +509,13 @@ private fun DashboardScreen(
     onShowSettings: () -> Unit,
 ) {
     val dailyCount = quests.count { QuestCadence.from(it) == QuestCadence.Daily && canComplete(it) }
-    val goalCount = quests.count { it.goalTarget > 1 && !it.archived }
+    val goalCount = quests.count { (QuestGoalType.from(it) != QuestGoalType.Completion || it.goalTarget > 1) && !it.archived }
     val spotlightQuests = availableQuests.sortedWith(
         compareByDescending<Quest> { QuestCadence.from(it) == QuestCadence.Daily }
+            .thenByDescending { QuestGoalType.from(it) == QuestGoalType.Timer }
             .thenByDescending { it.timerMinutes != null }
             .thenByDescending { it.goalTarget > 1 }
+            .thenBy { QuestGoalType.from(it) == QuestGoalType.Counter }
             .thenBy { it.title },
     )
 
@@ -450,6 +590,21 @@ private fun DashboardScreen(
 
 @Composable
 private fun LevelCard(progress: LevelProgress) {
+    val animatedFraction by animateFloatAsState(
+        targetValue = progress.fraction,
+        label = "Level progress",
+    )
+    val nextLevel = progress.next
+    val xpSpan = nextLevel?.let { (it.xpRequired - progress.current.xpRequired).coerceAtLeast(1) }
+    val progressLabel = when {
+        nextLevel == null -> "All current levels complete"
+        progress.xpIntoLevel == 0 && progress.totalXp > 0 ->
+            "Level ${progress.current.level} reached. ${nextLevel.xpRequired - progress.totalXp} XP to ${nextLevel.title}"
+        xpSpan != null ->
+            "${progress.xpIntoLevel.coerceAtLeast(0)} / $xpSpan XP toward ${nextLevel.title}"
+        else -> "All current levels complete"
+    }
+
     Card(
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, Gold.copy(alpha = 0.65f)),
@@ -461,14 +616,14 @@ private fun LevelCard(progress: LevelProgress) {
                 LevelBadge(progress.current.level)
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    DisplayText(progress.current.title, 28.sp, Ink, FontWeight.Bold)
+                    DisplayText(progress.current.title, 28.sp, Ink, FontWeight.Bold, maxLines = 2)
                     Text("Total XP", color = MutedInk, style = MaterialTheme.typography.bodyMedium)
                     DisplayText("${progress.totalXp} XP", 33.sp, Plum, FontWeight.Bold)
                 }
                 Mascot(Modifier.size(64.dp))
             }
             LinearProgressIndicator(
-                progress = { progress.fraction },
+                progress = { animatedFraction },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(10.dp)
@@ -486,7 +641,7 @@ private fun LevelCard(progress: LevelProgress) {
                 )
             }
             Text(
-                text = progress.xpToNext?.let { "$it XP to next level" } ?: "All current levels complete",
+                text = progressLabel,
                 color = Plum,
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
@@ -535,9 +690,9 @@ private fun QuestsScreen(
         val tabMatch = when (tab) {
             QuestTab.Active -> canComplete(quest)
             QuestTab.Dailies -> QuestCadence.from(quest) == QuestCadence.Daily
-            QuestTab.Goals -> quest.goalTarget > 1
-            QuestTab.Counters -> QuestCadence.from(quest) == QuestCadence.Counter
-            QuestTab.Timed -> quest.timerMinutes != null
+            QuestTab.Goals -> QuestGoalType.from(quest) != QuestGoalType.Completion || quest.goalTarget > 1
+            QuestTab.Counters -> QuestGoalType.from(quest) == QuestGoalType.Counter
+            QuestTab.Timed -> QuestGoalType.from(quest) == QuestGoalType.Timer || quest.timerMinutes != null
             QuestTab.Completed -> quest.id in completedQuestIds && !quest.repeatable
             QuestTab.Repeatable -> quest.repeatable
         }
@@ -601,7 +756,7 @@ private fun QuestListCard(
     compact: Boolean = false,
     onComplete: (Int) -> Unit,
 ) {
-    val cadence = progress.cadence
+    val goalType = progress.goalType
     Card(
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, Gold.copy(alpha = 0.28f)),
@@ -640,7 +795,7 @@ private fun QuestListCard(
                             Spacer(Modifier.height(8.dp))
                             GoalProgressBar(progress = progress)
                         }
-                        quest.timerMinutes?.let { minutes ->
+                        quest.timerMinutes?.takeIf { goalType != QuestGoalType.Timer }?.let { minutes ->
                             Spacer(Modifier.height(8.dp))
                             QuestTimer(questId = quest.id, minutes = minutes)
                         }
@@ -657,7 +812,7 @@ private fun QuestListCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     DisplayText(
-                        if (cadence == QuestCadence.Counter) "${quest.xp} XP / ${progress.unit}" else "${quest.xp} XP",
+                        "${quest.xp} XP",
                         22.sp,
                         Plum,
                         FontWeight.SemiBold,
@@ -670,10 +825,15 @@ private fun QuestListCard(
                 if (progress.hasGoal && !compact) {
                     Text("on goal", color = MutedInk, style = MaterialTheme.typography.bodySmall)
                 }
-                if (cadence == QuestCadence.Counter) {
-                    CounterLogControls(
-                        questId = quest.id,
+                if (goalType == QuestGoalType.Counter) {
+                    CounterIncrementControls(
                         unit = progress.unit,
+                        enabled = enabled,
+                        onLog = onComplete,
+                    )
+                } else if (goalType == QuestGoalType.Timer) {
+                    TimerLogControls(
+                        questId = quest.id,
                         enabled = enabled,
                         onLog = onComplete,
                     )
@@ -703,14 +863,14 @@ private fun QuestMetaRow(
 
     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         item { MetaChip(progress.cadence.label) }
+        if (progress.goalType != QuestGoalType.Completion) {
+            item { MetaChip(progress.goalType.label) }
+        }
         item { MetaChip(quest.category.ifBlank { "General" }) }
-        if (progress.cadence == QuestCadence.Counter) {
-            item { MetaChip("${progress.progressInCycle} ${progress.unit} logged") }
-        }
         if (progress.hasGoal) {
-            item { MetaChip("${progress.progressInCycle}/${progress.target} ${progress.unit}") }
+            item { MetaChip(progressSummary(progress)) }
         }
-        quest.timerMinutes?.let { minutes ->
+        quest.timerMinutes?.takeIf { progress.goalType != QuestGoalType.Timer }?.let { minutes ->
             item { MetaChip("${minutes}m timer") }
         }
         if (progress.completedCycles > 0 && progress.cadence == QuestCadence.Repeatable && !compact) {
@@ -722,19 +882,23 @@ private fun QuestMetaRow(
 private fun compactMetaText(quest: Quest, progress: QuestProgress): String =
     buildList {
         add(progress.cadence.label)
-        if (progress.cadence == QuestCadence.Counter) add("${progress.progressInCycle} ${progress.unit} logged")
-        if (progress.hasGoal) add("${progress.progressInCycle}/${progress.target} ${progress.unit}")
-        quest.timerMinutes?.let { add("${it}m timer") }
+        if (progress.goalType != QuestGoalType.Completion) add(progress.goalType.label)
+        if (progress.hasGoal) add(progressSummary(progress))
+        quest.timerMinutes?.takeIf { progress.goalType != QuestGoalType.Timer }?.let { add("${it}m timer") }
         add(quest.category.ifBlank { "General" })
     }.joinToString(" / ")
 
 private fun compactPackQuestText(quest: Quest): String =
     buildList {
         val cadence = QuestCadence.from(quest)
+        val goalType = QuestGoalType.from(quest)
         add(cadence.label)
-        if (quest.goalTarget > 1) add("${quest.goalTarget} ${quest.goalUnit}")
-        quest.timerMinutes?.let { add("${it}m timer") }
-        add(if (cadence == QuestCadence.Counter) "${quest.xp} XP / ${quest.goalUnit}" else "${quest.xp} XP")
+        if (goalType != QuestGoalType.Completion) add(goalType.label)
+        if (goalType != QuestGoalType.Completion || quest.goalTarget > 1) {
+            add("${quest.goalTarget} ${normalizedUnitLabel(quest.goalUnit, goalType, quest.goalTarget)}")
+        }
+        quest.timerMinutes?.takeIf { goalType != QuestGoalType.Timer }?.let { add("${it}m timer") }
+        add("${quest.xp} XP")
     }.joinToString(" / ")
 
 @Composable
@@ -770,7 +934,7 @@ private fun GoalProgressBar(progress: QuestProgress) {
             text = if (progress.isComplete) {
                 "Goal complete"
             } else {
-                "${progress.remaining} ${progress.unit} to go"
+                "${progress.remaining} ${unitLabel(progress.unit, progress.remaining)} to go"
             },
             color = MutedInk,
             style = MaterialTheme.typography.bodySmall,
@@ -842,36 +1006,57 @@ private fun TimerButton(
 }
 
 @Composable
-private fun CounterLogControls(
-    questId: String,
+private fun CounterIncrementControls(
     unit: String,
     enabled: Boolean,
     onLog: (Int) -> Unit,
 ) {
-    var amountText by rememberSaveable(questId, "counterAmount") { mutableStateOf("1") }
-    val amount = amountText.toIntOrNull()?.takeIf { it > 0 }
+    Button(
+        onClick = { onLog(1) },
+        enabled = enabled,
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
+        border = BorderStroke(1.dp, Gold),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Icon(Icons.Outlined.AddCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("+1 ${unitLabel(unit, 1)}", maxLines = 1)
+    }
+}
+
+@Composable
+private fun TimerLogControls(
+    questId: String,
+    enabled: Boolean,
+    onLog: (Int) -> Unit,
+) {
+    var minutesText by rememberSaveable(questId, "timerMinutesLogged") { mutableStateOf("10") }
+    val minutes = minutesText.toIntOrNull()?.takeIf { it > 0 }
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         OutlinedTextField(
-            value = amountText,
-            onValueChange = { amountText = it.filter(Char::isDigit).take(4) },
-            modifier = Modifier.widthIn(min = 76.dp, max = 96.dp),
-            label = { Text(unit) },
+            value = minutesText,
+            onValueChange = { minutesText = it.filter(Char::isDigit).take(4) },
+            modifier = Modifier.widthIn(min = 82.dp, max = 106.dp),
+            label = { Text("min") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             shape = RoundedCornerShape(8.dp),
         )
         Button(
-            onClick = { amount?.let(onLog) },
-            enabled = enabled && amount != null && amount > 0,
+            onClick = { minutes?.let(onLog) },
+            enabled = enabled && minutes != null && minutes > 0,
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
             border = BorderStroke(1.dp, Gold),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
         ) {
+            Icon(Icons.Outlined.Timer, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
             Text("Log", maxLines = 1)
         }
     }
@@ -989,7 +1174,7 @@ private fun ImportExportScreen(
             OrnateActionButton(
                 icon = Icons.Outlined.FileUpload,
                 title = "Import quest pack",
-                detail = "Merge JSON quests into your log",
+                detail = "Make imported quests current; close older quests",
                 onClick = onImportQuestPack,
             )
         }
@@ -1056,7 +1241,7 @@ private fun QuestPackMaker(
             CompactTextField(
                 value = draft.xpText,
                 onValueChange = { onDraftChange(draft.copy(xpText = it.filter(Char::isDigit).ifBlank { "0" })) },
-                label = if (draft.cadence == QuestCadence.Counter) "XP per unit" else "XP",
+                label = "XP",
                 numeric = true,
             )
             CompactTextField(
@@ -1077,22 +1262,46 @@ private fun QuestPackMaker(
                     )
                 }
             }
-            if (draft.cadence != QuestCadence.Counter) {
-                CompactTextField(
-                    value = draft.goalTargetText,
-                    onValueChange = {
-                        onDraftChange(draft.copy(goalTargetText = it.filter(Char::isDigit).ifBlank { "1" }))
-                    },
-                    label = "Goal target",
-                    numeric = true,
-                )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                QuestGoalType.entries.forEach { item ->
+                    FilterPill(
+                        text = item.label,
+                        selected = draft.goalType == item,
+                        onClick = {
+                            val nextUnit = when (item) {
+                                QuestGoalType.Counter -> if (draft.goalUnit == "completion" || draft.goalUnit == "minute") "unit" else draft.goalUnit
+                                QuestGoalType.Timer -> "minute"
+                                QuestGoalType.Completion -> if (draft.goalUnit == "unit" || draft.goalUnit == "minute") "completion" else draft.goalUnit
+                            }
+                            onDraftChange(draft.copy(goalType = item, goalUnit = nextUnit))
+                        },
+                    )
+                }
             }
             CompactTextField(
-                value = draft.goalUnit,
-                onValueChange = { onDraftChange(draft.copy(goalUnit = it)) },
-                label = if (draft.cadence == QuestCadence.Counter) "Counter unit" else "Unit",
+                value = draft.goalTargetText,
+                onValueChange = {
+                    onDraftChange(draft.copy(goalTargetText = it.filter(Char::isDigit).ifBlank { "1" }))
+                },
+                label = when (draft.goalType) {
+                    QuestGoalType.Counter -> "Required count"
+                    QuestGoalType.Timer -> "Required minutes"
+                    QuestGoalType.Completion -> "Goal target"
+                },
+                numeric = true,
             )
-            if (draft.cadence != QuestCadence.Counter) {
+            if (draft.goalType != QuestGoalType.Timer) {
+                CompactTextField(
+                    value = draft.goalUnit,
+                    onValueChange = { onDraftChange(draft.copy(goalUnit = it)) },
+                    label = if (draft.goalType == QuestGoalType.Counter) "Counter unit" else "Unit",
+                )
+            }
+            if (draft.goalType == QuestGoalType.Completion) {
                 CompactTextField(
                     value = draft.timerMinutesText,
                     onValueChange = {
@@ -1690,6 +1899,22 @@ private fun formatTimer(seconds: Int): String {
     val remainingSeconds = safeSeconds % 60
     return "%02d:%02d".format(minutes, remainingSeconds)
 }
+
+private fun progressSummary(progress: QuestProgress): String {
+    val unit = unitLabel(progress.unit, progress.target)
+    return "${progress.progressInCycle}/${progress.target} $unit"
+}
+
+private fun normalizedUnitLabel(unit: String, goalType: QuestGoalType, amount: Int): String {
+    val normalized = when (goalType) {
+        QuestGoalType.Timer -> "minute"
+        else -> unit.ifBlank { "completion" }
+    }
+    return unitLabel(normalized, amount)
+}
+
+private fun unitLabel(unit: String, amount: Int): String =
+    if (amount == 1 || unit.endsWith("s", ignoreCase = true)) unit else "${unit}s"
 
 private enum class QuestTab(val label: String) {
     Active("Active"),

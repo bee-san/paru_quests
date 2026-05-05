@@ -2,7 +2,9 @@ package com.paruchan.questlog
 
 import com.paruchan.questlog.core.Completion
 import com.paruchan.questlog.core.DailyQuestMessages
+import com.paruchan.questlog.core.Level
 import com.paruchan.questlog.core.Quest
+import com.paruchan.questlog.core.QuestLogJsonCodec
 import com.paruchan.questlog.core.QuestLogEngine
 import com.paruchan.questlog.core.QuestLogState
 import org.junit.Assert.assertEquals
@@ -34,6 +36,53 @@ class QuestLogEngineTest {
         assertEquals(3550, progress.totalXp)
         assertEquals(7, progress.current.level)
         assertEquals("Visa Bard of Babsy", progress.current.title)
+    }
+
+    @Test
+    fun `level calculation shows progress inside smoother late levels`() {
+        val engine = QuestLogEngine(clock = clock)
+        val state = QuestLogState(
+            completions = listOf(
+                completion("a", 5000),
+            ),
+        )
+
+        val progress = engine.levelProgress(state)
+
+        assertEquals(5000, progress.totalXp)
+        assertEquals(8, progress.current.level)
+        assertEquals("Starry Paru", progress.current.title)
+        assertEquals(300, progress.xpIntoLevel)
+        assertEquals(1200, progress.xpToNext)
+        assertEquals(0.2f, progress.fraction, 0.0001f)
+    }
+
+    @Test
+    fun `old built in levels migrate to cute paru ladder`() {
+        val normalized = QuestLogJsonCodec().normalize(
+            QuestLogState(levels = legacyBuiltInLevels()),
+        )
+
+        assertEquals(12, normalized.levels.size)
+        assertEquals("Babsy Paru", normalized.levels[0].title)
+        assertEquals(120, normalized.levels[1].xpRequired)
+        assertEquals("Visa Bard of Babsy", normalized.levels[6].title)
+        assertEquals(3550, normalized.levels[6].xpRequired)
+        assertEquals("Legendary Babsy Paru", normalized.levels.last().title)
+    }
+
+    @Test
+    fun `custom levels survive normalization`() {
+        val customLevels = listOf(
+            Level(level = 1, xpRequired = 0, title = "Custom Paru", unlocks = listOf("Custom start")),
+            Level(level = 2, xpRequired = 42, title = "Custom Babsy", unlocks = listOf("Custom next")),
+        )
+
+        val normalized = QuestLogJsonCodec().normalize(
+            QuestLogState(levels = customLevels),
+        )
+
+        assertEquals(customLevels, normalized.levels)
     }
 
     @Test
@@ -134,45 +183,77 @@ class QuestLogEngineTest {
     }
 
     @Test
-    fun `counter quests award xp per logged unit`() {
+    fun `counter quests increment by one and complete at target`() {
         var nextId = 0
         val engine = QuestLogEngine(clock = clock, idFactory = { "counter-${++nextId}" })
         val quest = Quest(
             id = "run",
-            title = "Run miles",
+            title = "Spot paruchans",
             xp = 100,
-            cadence = "counter",
-            goalUnit = "mile",
+            goalType = "counter",
+            goalTarget = 3,
+            goalUnit = "paruchan",
         )
         val state = QuestLogState(quests = listOf(quest))
 
-        val first = engine.completeQuest(state, quest.id, progressAmount = 3)
-        val second = engine.completeQuest(first.state, quest.id, progressAmount = 2)
-        val progress = engine.progressFor(second.state, quest)
+        val first = engine.completeQuest(state, quest.id, progressAmount = 99)
+        val second = engine.completeQuest(first.state, quest.id)
+        val third = engine.completeQuest(second.state, quest.id)
+        val fourth = engine.completeQuest(third.state, quest.id)
+        val progress = engine.progressFor(third.state, quest)
 
-        assertEquals(300, first.completion?.xpAwarded)
-        assertEquals(200, second.completion?.xpAwarded)
-        assertEquals(500, engine.totalXp(second.state))
-        assertEquals(5, progress.progressInCycle)
-        assertTrue(engine.canComplete(second.state, quest))
+        assertEquals(1, first.completion?.progressAmount)
+        assertEquals(0, first.completion?.xpAwarded)
+        assertEquals(0, second.completion?.xpAwarded)
+        assertEquals(100, third.completion?.xpAwarded)
+        assertEquals(100, engine.totalXp(third.state))
+        assertEquals(3, progress.progressInCycle)
+        assertFalse(engine.canComplete(third.state, quest))
+        assertNull(fourth.completion)
     }
 
     @Test
-    fun `counter quests coerce blank or zero amount to one unit`() {
+    fun `timer quests record minutes and complete at target`() {
+        var nextId = 0
+        val engine = QuestLogEngine(clock = clock, idFactory = { "timer-${++nextId}" })
+        val quest = Quest(
+            id = "study",
+            title = "Study for thirty minutes",
+            xp = 75,
+            goalType = "timer",
+            goalTarget = 30,
+            goalUnit = "minute",
+        )
+
+        val first = engine.completeQuest(QuestLogState(quests = listOf(quest)), quest.id, progressAmount = 12)
+        val second = engine.completeQuest(first.state, quest.id, progressAmount = 18)
+        val progress = engine.progressFor(second.state, quest)
+
+        assertEquals(12, first.completion?.progressAmount)
+        assertEquals(0, first.completion?.xpAwarded)
+        assertEquals(18, second.completion?.progressAmount)
+        assertEquals(75, second.completion?.xpAwarded)
+        assertEquals(30, progress.progressInCycle)
+        assertFalse(engine.canComplete(second.state, quest))
+    }
+
+    @Test
+    fun `timer quests coerce blank or zero minutes to one minute`() {
         val engine = QuestLogEngine(clock = clock, idFactory = { "counter" })
         val quest = Quest(
-            id = "dogs",
-            title = "See a dog",
+            id = "timer",
+            title = "Practice",
             xp = 10,
-            cadence = "counter",
-            goalUnit = "dog",
+            goalType = "timer",
+            goalTarget = 2,
+            goalUnit = "minute",
         )
 
         val result = engine.completeQuest(QuestLogState(quests = listOf(quest)), quest.id, progressAmount = 0)
 
         assertEquals(1, result.completion?.progressAmount)
-        assertEquals(10, result.completion?.xpAwarded)
-        assertEquals("Logged 1 dog for 10 XP", result.message)
+        assertEquals(0, result.completion?.xpAwarded)
+        assertEquals("Practice logged 1 minute. 1/2 minutes", result.message)
     }
 
     @Test
@@ -183,7 +264,7 @@ class QuestLogEngineTest {
         val openGoal = Quest(id = "goal-open", title = "Open goal", xp = 30, goalTarget = 3)
         val doneOnce = Quest(id = "once-done", title = "Done once", xp = 20)
         val archived = Quest(id = "archived", title = "Archived", xp = 20, archived = true)
-        val counter = Quest(id = "counter", title = "Counter", xp = 5, cadence = "counter", goalUnit = "paruchan")
+        val counter = Quest(id = "counter", title = "Counter", xp = 5, goalType = "counter", goalTarget = 2, goalUnit = "paruchan")
         val state = QuestLogState(
             quests = listOf(doneOnce, openGoal, doneDaily, archived, counter, openDaily),
             completions = listOf(
@@ -237,4 +318,67 @@ class QuestLogEngineTest {
             completedAt = "2026-05-05T12:00:00Z",
             xpAwarded = xp,
         )
+
+    private fun legacyBuiltInLevels(): List<Level> = listOf(
+        Level(
+            level = 1,
+            xpRequired = 0,
+            title = "Pocket Questling",
+            unlocks = listOf("Quest log awakened"),
+        ),
+        Level(
+            level = 2,
+            xpRequired = 150,
+            title = "Snack Squire",
+            unlocks = listOf("Tiny treats count double emotionally"),
+        ),
+        Level(
+            level = 3,
+            xpRequired = 450,
+            title = "Errand Enchanter",
+            unlocks = listOf("One ceremonial side quest slot"),
+        ),
+        Level(
+            level = 4,
+            xpRequired = 900,
+            title = "Cozy Crusader",
+            unlocks = listOf("Blanket fort planning rights"),
+        ),
+        Level(
+            level = 5,
+            xpRequired = 1500,
+            title = "Charm Collector",
+            unlocks = listOf("Rare sticker-tier quest rewards"),
+        ),
+        Level(
+            level = 6,
+            xpRequired = 2400,
+            title = "Babsy Minstrel",
+            unlocks = listOf("Daily ballad of completed chores"),
+        ),
+        Level(
+            level = 7,
+            xpRequired = 3550,
+            title = "Visa Bard of Babsy",
+            unlocks = listOf("Paperwork victory anthem"),
+        ),
+        Level(
+            level = 8,
+            xpRequired = 5000,
+            title = "Calendar Paladin",
+            unlocks = listOf("Future quest chain planning"),
+        ),
+        Level(
+            level = 9,
+            xpRequired = 7000,
+            title = "Treat Hoarder",
+            unlocks = listOf("Legendary reward cache"),
+        ),
+        Level(
+            level = 10,
+            xpRequired = 9500,
+            title = "Paruchan Legend",
+            unlocks = listOf("Hall of tiny triumphs"),
+        ),
+    )
 }

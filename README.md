@@ -4,13 +4,13 @@ Native Android MVP for a private two-person quest tracker.
 
 The app stores all quest data locally in `filesDir/questlog.json`. Android cloud backup is disabled. There are no accounts, no server, no database, and no built-in AI image generation.
 
-The Files screen includes one bundled starter pack: a single `Thank you paruchan` quest worth `5000 XP`. Importing it merges the quest into local app data just like any other quest pack.
+The Files screen includes one bundled starter pack: a single `Thank you paruchan` quest worth `5000 XP`. Importing any quest pack makes that pack the current open quest set: older quests are archived without adding completions or XP, while matching quest IDs update in place.
 
 Settings includes daily quest reminders. Reminder notifications are local-only and are posted only when the quest log still has uncompleted available quests.
 
 ## Quest Types
 
-Quest packs can include one-off quests, repeatable quests, dailies, counter quests, multi-step goals, and foreground timers:
+Quest packs can include one-off quests, repeatable quests, dailies, finite counters, timer goals, multi-step goals, and optional foreground timer helpers:
 
 ```json
 {
@@ -18,6 +18,7 @@ Quest packs can include one-off quests, repeatable quests, dailies, counter ques
   "xp": 80,
   "category": "Home",
   "cadence": "daily",
+  "goalType": "completion",
   "goalTarget": 4,
   "goalUnit": "room",
   "timerMinutes": 20
@@ -26,19 +27,32 @@ Quest packs can include one-off quests, repeatable quests, dailies, counter ques
 
 Multi-step goals award XP when the target is reached. Daily goals reset on the next local day.
 
-Counter quests use `cadence: "counter"` with `xp` as XP per unit. For example:
+Counter quests use `goalType: "counter"` and complete when the user taps `+1` enough times. `xp` is awarded once when the target is reached:
 
 ```json
 {
-  "title": "Run miles",
+  "title": "Spot 10 paruchans",
   "xp": 100,
-  "category": "Fitness",
-  "cadence": "counter",
-  "goalUnit": "mile"
+  "category": "Adventure",
+  "cadence": "once",
+  "goalType": "counter",
+  "goalTarget": 10,
+  "goalUnit": "paruchan"
 }
 ```
 
-Logging `3` miles awards `300 XP`.
+Timer goals use `goalType: "timer"` and count manually recorded minutes:
+
+```json
+{
+  "title": "Practice for twenty minutes",
+  "xp": 80,
+  "category": "Music",
+  "cadence": "once",
+  "goalType": "timer",
+  "goalTarget": 20
+}
+```
 
 The Files screen includes a quest-pack maker. Add quests to a temporary pack, then export the JSON through Android's file picker or share it through the Android share sheet.
 

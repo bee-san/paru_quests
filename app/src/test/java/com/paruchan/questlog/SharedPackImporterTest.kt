@@ -3,9 +3,11 @@ package com.paruchan.questlog
 import com.paruchan.questlog.core.Completion
 import com.paruchan.questlog.core.EncryptedQuestPackCodec
 import com.paruchan.questlog.core.EncryptedSharedPackAsset
+import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestLogState
 import com.paruchan.questlog.core.SharedPackImporter
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -98,6 +100,106 @@ class SharedPackImporterTest {
         assertEquals("Shared quest updated", second.state.quests.single().title)
         assertEquals(25, second.state.quests.single().xp)
         assertEquals(stateWithCompletion.completions, second.state.completions)
+    }
+
+    @Test
+    fun `shared pack import closes quests outside the applied pack set`() {
+        val oldState = QuestLogState(
+            quests = listOf(Quest(id = "old", title = "Old quest", xp = 10)),
+        )
+        val asset = EncryptedSharedPackAsset(
+            name = "shared.encrypted.json",
+            json = encryptedPack("""{"quests":[{"id":"new","title":"New quest","xp":25}]}"""),
+        )
+
+        val result = SharedPackImporter().mergeEncryptedPacks(
+            state = oldState,
+            assets = listOf(asset),
+            password = PASSWORD,
+            importedMarkers = emptySet(),
+        )
+
+        assertEquals(1, result.imported)
+        assertEquals(1, result.closed)
+        assertTrue(result.state.quests.first { it.id == "old" }.archived)
+        assertFalse(result.state.quests.first { it.id == "new" }.archived)
+    }
+
+    @Test
+    fun `shared pack import keeps every quest from bundled packs open`() {
+        val firstAsset = EncryptedSharedPackAsset(
+            name = "01-first.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"first","title":"First quest","xp":10}]}""",
+                packId = "first-pack",
+            ),
+        )
+        val secondAsset = EncryptedSharedPackAsset(
+            name = "02-second.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"second","title":"Second quest","xp":20}]}""",
+                packId = "second-pack",
+            ),
+        )
+
+        val result = SharedPackImporter().mergeEncryptedPacks(
+            state = QuestLogState(),
+            assets = listOf(firstAsset, secondAsset),
+            password = PASSWORD,
+            importedMarkers = emptySet(),
+        )
+
+        assertEquals(2, result.imported)
+        assertEquals(0, result.closed)
+        assertFalse(result.state.quests.first { it.id == "first" }.archived)
+        assertFalse(result.state.quests.first { it.id == "second" }.archived)
+    }
+
+    @Test
+    fun `shared pack import keeps unchanged bundled packs open when another pack updates`() {
+        val firstAsset = EncryptedSharedPackAsset(
+            name = "01-first.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"first","title":"First quest","xp":10}]}""",
+                packId = "first-pack",
+            ),
+        )
+        val secondAsset = EncryptedSharedPackAsset(
+            name = "02-second.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"second","title":"Second quest","xp":20}]}""",
+                packId = "second-pack",
+            ),
+        )
+        val updatedSecondAsset = EncryptedSharedPackAsset(
+            name = "02-second.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"second","title":"Second quest updated","xp":25}]}""",
+                packId = "second-pack",
+                packVersion = "2",
+            ),
+        )
+        val importer = SharedPackImporter()
+        val firstImport = importer.mergeEncryptedPacks(
+            state = QuestLogState(),
+            assets = listOf(firstAsset, secondAsset),
+            password = PASSWORD,
+            importedMarkers = emptySet(),
+        )
+
+        val secondImport = importer.mergeEncryptedPacks(
+            state = firstImport.state,
+            assets = listOf(firstAsset, updatedSecondAsset),
+            password = PASSWORD,
+            importedMarkers = firstImport.newMarkers,
+        )
+
+        assertEquals(1, secondImport.unchangedPacks)
+        assertEquals(1, secondImport.updated)
+        assertEquals(0, secondImport.closed)
+        assertFalse(secondImport.state.quests.first { it.id == "first" }.archived)
+        assertFalse(secondImport.state.quests.first { it.id == "second" }.archived)
+        assertEquals("Second quest updated", secondImport.state.quests.first { it.id == "second" }.title)
     }
 
     @Test

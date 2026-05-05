@@ -13,6 +13,7 @@ import com.paruchan.questlog.BuildConfig
 import com.paruchan.questlog.core.LevelProgress
 import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestCadence
+import com.paruchan.questlog.core.QuestGoalType
 import com.paruchan.questlog.core.QuestLogEngine
 import com.paruchan.questlog.core.QuestLogState
 import com.paruchan.questlog.core.QuestProgress
@@ -51,6 +52,9 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
     var message: String? by mutableStateOf(null)
         private set
 
+    var completionCelebration: CompletionCelebration? by mutableStateOf(null)
+        private set
+
     var updateInProgress: Boolean by mutableStateOf(false)
         private set
 
@@ -87,6 +91,10 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         message = null
     }
 
+    fun clearCompletionCelebration() {
+        completionCelebration = null
+    }
+
     fun updateQuestNotificationTime(hour: Int, minute: Int) {
         val next = questNotificationSettings.copy(hour = hour, minute = minute).normalized()
         questNotificationSettings = next
@@ -121,6 +129,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             loadJob.join()
             val previousState = state
+            val quest = previousState.quests.firstOrNull { it.id == questId }
             val result = engine.completeQuest(state, questId, progressAmount = progressAmount)
             state = result.state
             message = result.message
@@ -131,6 +140,16 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
                     state = previousState
                     message = error.message ?: "Quest completion failed"
                     return@launch
+                }
+                if (
+                    quest != null &&
+                    result.completion.xpAwarded > 0
+                ) {
+                    completionCelebration = CompletionCelebration(
+                        id = result.completion.id,
+                        questTitle = quest.title,
+                        xpAwarded = result.completion.xpAwarded,
+                    )
                 }
             }
         }
@@ -445,6 +464,12 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
     }
 }
 
+data class CompletionCelebration(
+    val id: String,
+    val questTitle: String,
+    val xpAwarded: Int,
+)
+
 data class QuestPackDraft(
     val packName: String = "Paruchan Quest Pack",
     val title: String = "",
@@ -453,6 +478,7 @@ data class QuestPackDraft(
     val category: String = "Paruchan",
     val icon: String = "star",
     val cadence: QuestCadence = QuestCadence.Once,
+    val goalType: QuestGoalType = QuestGoalType.Completion,
     val goalTargetText: String = "1",
     val goalUnit: String = "completion",
     val timerMinutesText: String = "",
@@ -472,9 +498,14 @@ data class QuestPackDraft(
             icon = icon.trim().ifBlank { "star" },
             repeatable = cadence == QuestCadence.Repeatable,
             cadence = cadence.wireName,
-            goalTarget = if (cadence == QuestCadence.Counter) 1 else goalTarget,
-            goalUnit = goalUnit.trim().ifBlank { if (cadence == QuestCadence.Counter) "unit" else "completion" },
-            timerMinutes = if (cadence == QuestCadence.Counter) null else timerMinutes,
+            goalType = goalType.wireName,
+            goalTarget = goalTarget,
+            goalUnit = when (goalType) {
+                QuestGoalType.Counter -> goalUnit.trim().ifBlank { "unit" }
+                QuestGoalType.Timer -> "minute"
+                QuestGoalType.Completion -> goalUnit.trim().ifBlank { "completion" }
+            },
+            timerMinutes = if (goalType == QuestGoalType.Completion) timerMinutes else null,
         )
     }
 }

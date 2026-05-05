@@ -8,6 +8,7 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 - V1 is tracker-only: no accounts, no server, no database, and no built-in AI/image generation.
 - Curated private quest packs may be shipped as encrypted APK assets under `app/src/main/assets/shared-packs/`; this is not remote sync and must not include GitHub tokens or accounts.
 - The app ships one user-requested bundled quest pack at `app/src/main/assets/quest-packs/thank-you-paruchan.json`; it contains only `Thank you paruchan` for `5000 XP`.
+- The current private shared pack asset is `app/src/main/assets/shared-packs/paruchan-quest-pack.encrypted.json`; plaintext source packs must stay outside git.
 - Quest data is private user data. It lives only in local app storage or user-imported/exported JSON files; Android cloud backup stays disabled.
 - The stable Android package/application id is `com.paruchan.questlog`; do not change it casually because sideloaded updates depend on package and signing continuity.
 - Canonical paruchan reference: `/home/bee/Downloads/paruchan.jpg`. Paruchans are soft white plush blobs with rounded cat ears, blue embroidered eyes, a pink nose, and pink cheek/whisker stripes. Do not draw them as generic fantasy cats, do not add smiles, and do not add separate arms, paws, or feet.
@@ -24,7 +25,7 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 
 ## Data Contract
 
-- `Quest`: `id`, `title`, `flavourText`, `xp`, `category`, `icon`, `repeatable`, `cadence`, `goalTarget`, `goalUnit`, optional `timerMinutes`, `createdAt`, `archived`.
+- `Quest`: `id`, `title`, `flavourText`, `xp`, `category`, `icon`, `repeatable`, `cadence`, `goalType`, `goalTarget`, `goalUnit`, optional `timerMinutes`, `createdAt`, `archived`.
 - `Completion`: `id`, `questId`, `completedAt`, `xpAwarded`, `progressAmount`, optional `note`.
 - `Level`: `level`, `xpRequired`, `title`, `unlocks`.
 - `QuestLogState`: `schemaVersion`, `quests`, `completions`, `levels`, optional `exportedAt`.
@@ -32,9 +33,13 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 - Non-repeatable quests become unavailable after their first completion.
 - Repeatable quests remain available and append another completion each time.
 - Daily quests use `cadence: "daily"` and become unavailable after today's goal target is reached; they reset on the next local day.
-- Counter quests use `cadence: "counter"` and treat `xp` as XP per `goalUnit`. Logging `3` miles on a `100 XP / mile` quest appends one completion with `progressAmount: 3` and `xpAwarded: 300`.
+- `cadence` is only schedule: `once`, `daily`, or `repeatable`.
+- `goalType` is goal shape: `completion`, `counter`, or `timer`.
+- Counter quests use `goalType: "counter"` and append `progressAmount: 1` each time the user taps `+1`; `xp` is awarded once when `goalTarget` is reached.
+- Timer quests use `goalType: "timer"` and append manually recorded minutes as `progressAmount`; `xp` is awarded once when the required minutes are reached.
+- Legacy imports with `cadence: "counter"` or `counter: true` must normalize to `cadence: "once"` and `goalType: "counter"`.
 - Multi-step goals use `goalTarget > 1`; progress entries can award `0 XP` until the target is reached, then the quest XP is awarded.
-- Timed quests use `timerMinutes`; timers are foreground UI helpers and do not run as background services in v1.
+- `timerMinutes` is only a foreground helper for non-timer goals and does not run as a background service in v1.
 - Default level curve is in `DefaultLevels.kt`; preserve the tested threshold `3550 XP -> Level 7, Visa Bard of Babsy`.
 
 ## Import, Export, Restore
@@ -42,10 +47,12 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 - Quest-pack import uses Android's system file picker and accepts JSON arrays or objects with a `quests` array.
 - Quest-pack creation is available in the Files screen. It builds shareable JSON objects with `kind: "paruchan.quest-pack"` and a `quests` array.
 - Quest-pack export uses `ACTION_CREATE_DOCUMENT`; quest-pack share writes a temporary JSON file under `cacheDir/quest-packs` and sends it through Android's share sheet with the app `FileProvider`.
-- Import merges into existing quests.
+- Quest-pack import makes the imported pack the current open quest set.
+- Existing quests that are not present in the imported pack are archived without adding completions or awarding XP.
 - If an imported quest has `id`, update by `id`.
 - If no `id` is present, derive a stable ID from normalized `title/category/xp/flavourText/repeatable` to avoid duplicates on re-import.
 - Encrypted shared packs use `kind: "paruchan.encrypted-quest-pack"` with PBKDF2-HMAC-SHA256 and AES-256-GCM. The decrypted payload is the existing quest-pack JSON format.
+- When multiple bundled shared packs are imported in one run, close previous quests only after all bundled packs in that run have been accounted for, including packs that were already up to date.
 - The shared-pack password is entered in Settings, stored locally with an Android Keystore key, and used to auto-import bundled shared packs on app launch after an APK update.
 - Do not hardcode shared-pack passwords in app code, docs, tests, or committed assets. The local ignored env file is `agent-skills/paruchan-shared-packs/.env`; the tracked example is `.env.example`.
 - Use `agent-skills/paruchan-shared-packs/SKILL.md` and `tools/encrypt_shared_pack.sh` when adding private shared packs. Keep plaintext packs outside git, preferably under `/tmp`, and commit only encrypted assets.
@@ -93,7 +100,7 @@ The test suite covers:
 - Completion log XP totals.
 - Repeatable quest completion.
 - Non-repeatable lockout.
-- Quest-pack validation, merge, and duplicate prevention.
+- Quest-pack validation, current-pack closeout, and duplicate prevention.
 - Encrypted shared-pack decryption, wrong-password failure, idempotent import markers, and quest updates preserving completions.
 - Backup export/restore round trip.
 - GitHub release version comparison and APK asset selection.
