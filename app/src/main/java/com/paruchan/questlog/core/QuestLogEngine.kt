@@ -40,11 +40,13 @@ class QuestLogEngine(
         val totalProgress = completions.sumOf { it.progressAmount.coerceAtLeast(1) }
         val completedCycles = totalProgress / target
         val progressInCycle = when (cadence) {
+            QuestCadence.Counter -> totalProgress
             QuestCadence.Repeatable -> totalProgress % target
             QuestCadence.Daily,
             QuestCadence.Once -> totalProgress.coerceAtMost(target)
         }
         val isComplete = when (cadence) {
+            QuestCadence.Counter,
             QuestCadence.Repeatable -> false
             QuestCadence.Daily,
             QuestCadence.Once -> totalProgress >= target
@@ -63,13 +65,14 @@ class QuestLogEngine(
 
     fun canComplete(state: QuestLogState, quest: Quest): Boolean {
         if (quest.archived) return false
-        if (QuestCadence.from(quest) == QuestCadence.Repeatable) return true
+        if (QuestCadence.from(quest) in setOf(QuestCadence.Repeatable, QuestCadence.Counter)) return true
         return !progressFor(state, quest).isComplete
     }
 
     fun completeQuest(
         state: QuestLogState,
         questId: String,
+        progressAmount: Int = 1,
         note: String? = null,
     ): CompletionResult {
         val quest = state.quests.firstOrNull { it.id == questId }
@@ -80,21 +83,34 @@ class QuestLogEngine(
         }
 
         val progress = progressFor(state, quest)
-        val willCompleteCycle = progress.progressInCycle + 1 >= progress.target
+        val cadence = QuestCadence.from(quest)
+        val safeAmount = progressAmount.coerceAtLeast(1)
+        val recordedAmount = if (cadence == QuestCadence.Counter) safeAmount else 1
+        val willCompleteCycle = when (cadence) {
+            QuestCadence.Counter -> true
+            else -> progress.progressInCycle + recordedAmount >= progress.target
+        }
+        val xpAwarded = when (cadence) {
+            QuestCadence.Counter -> quest.xp.coerceAtLeast(0) * recordedAmount
+            else -> if (willCompleteCycle) quest.xp.coerceAtLeast(0) else 0
+        }
         val completion = Completion(
             id = idFactory(),
             questId = quest.id,
             completedAt = Instant.now(clock).toString(),
-            xpAwarded = if (willCompleteCycle) quest.xp.coerceAtLeast(0) else 0,
-            progressAmount = 1,
+            xpAwarded = xpAwarded,
+            progressAmount = recordedAmount,
             note = note?.trim()?.ifBlank { null },
         )
-        val nextProgress = progress.progressInCycle + 1
+        val nextProgress = progress.progressInCycle + recordedAmount
 
         return CompletionResult(
             state = state.copy(completions = state.completions + completion),
             completion = completion,
-            message = if (willCompleteCycle) {
+            message = if (cadence == QuestCadence.Counter) {
+                val unit = pluralizeUnit(progress.unit, recordedAmount)
+                "Logged $recordedAmount $unit for ${completion.xpAwarded} XP"
+            } else if (willCompleteCycle) {
                 "${quest.title} completed for ${completion.xpAwarded} XP"
             } else {
                 "${quest.title} progress $nextProgress/${progress.target} ${progress.unit}"
@@ -108,6 +124,9 @@ class QuestLogEngine(
 
     private fun Completion.completedDate(): LocalDate? =
         runCatching { Instant.parse(completedAt).atZone(clock.zone).toLocalDate() }.getOrNull()
+
+    private fun pluralizeUnit(unit: String, amount: Int): String =
+        if (amount == 1 || unit.endsWith("s", ignoreCase = true)) unit else "${unit}s"
 }
 
 data class CompletionResult(

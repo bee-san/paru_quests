@@ -71,12 +71,15 @@ class QuestPackImporter(
         if (title.isBlank()) return ParsedQuest(error = "Quest ${index + 1} is missing a title")
 
         val xp = obj.int("xp")
+            ?: obj.int("xpPerUnit")
+            ?: obj.int("xp_per_unit")
         if (xp == null || xp < 0) return ParsedQuest(error = "Quest '$title' must have a non-negative xp value")
 
         val flavourText = (obj.string("flavourText").ifBlank { obj.string("flavorText") }).trim()
         val category = obj.string("category").trim().ifBlank { "General" }
         val repeatable = obj.boolean("repeatable") ?: false
         val cadence = when {
+            obj.boolean("counter") == true -> QuestCadence.Counter
             obj.boolean("daily") == true -> QuestCadence.Daily
             else -> QuestCadence.from(
                 obj.string("cadence")
@@ -97,7 +100,7 @@ class QuestPackImporter(
             .ifBlank { obj.string("unit") }
             .ifBlank { goal?.string("unit").orEmpty() }
             .trim()
-            .ifBlank { "completion" }
+            .ifBlank { if (cadence == QuestCadence.Counter) "unit" else "completion" }
         val timer = obj.obj("timer")
         val timerMinutes = (
             obj.int("timerMinutes")

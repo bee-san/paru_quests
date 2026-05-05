@@ -1,0 +1,21 @@
+{
+  "kind": "paruchan.quest-pack",
+  "schemaVersion": 1,
+  "name": "Thank You Paruchan",
+  "quests": [
+    {
+      "id": "thank_you_paruchan",
+      "title": "Thank you paruchan",
+      "flavourText": "A soft little thank-you for everything.",
+      "xp": 5000,
+      "category": "Paruchan",
+      "icon": "paruchan",
+      "repeatable": false,
+      "cadence": "once",
+      "goalTarget": 1,
+      "goalUnit": "completion",
+      "createdAt": "2026-05-05T00:00:00Z",
+      "archived": false
+    }
+  ]
+}

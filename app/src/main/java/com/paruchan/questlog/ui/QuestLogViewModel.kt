@@ -58,8 +58,8 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         message = null
     }
 
-    fun completeQuest(questId: String) {
-        val result = engine.completeQuest(state, questId)
+    fun completeQuest(questId: String, progressAmount: Int = 1) {
+        val result = engine.completeQuest(state, questId, progressAmount = progressAmount)
         state = result.state
         repository.save(state)
         message = result.message
@@ -75,6 +75,20 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
                 message = result.summary
             }.onFailure { error ->
                 message = error.message ?: "Quest pack import failed"
+            }
+        }
+    }
+
+    fun importBundledThankYouPack(context: Context) {
+        viewModelScope.launch {
+            runCatching {
+                val json = readAssetText(context, THANK_YOU_PACK_ASSET)
+                repository.importQuestPack(json)
+            }.onSuccess { result ->
+                state = result.state
+                message = "Thank-you pack: ${result.summary}"
+            }.onFailure { error ->
+                message = error.message ?: "Bundled quest pack import failed"
             }
         }
     }
@@ -193,10 +207,20 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
             ?: error("Could not read selected file")
     }
 
+    private suspend fun readAssetText(context: Context, path: String): String = withContext(Dispatchers.IO) {
+        context.assets.open(path)
+            .bufferedReader()
+            .use { it.readText() }
+    }
+
     private suspend fun writeText(context: Context, uri: Uri, text: String) = withContext(Dispatchers.IO) {
         context.contentResolver.openOutputStream(uri, "wt")
             ?.bufferedWriter()
             ?.use { it.write(text) }
             ?: error("Could not write selected file")
+    }
+
+    private companion object {
+        const val THANK_YOU_PACK_ASSET = "quest-packs/thank-you-paruchan.json"
     }
 }

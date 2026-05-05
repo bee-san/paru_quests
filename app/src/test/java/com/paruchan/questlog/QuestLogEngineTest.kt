@@ -130,6 +130,48 @@ class QuestLogEngineTest {
         assertTrue(engine.canComplete(third.state, quest))
     }
 
+    @Test
+    fun `counter quests award xp per logged unit`() {
+        var nextId = 0
+        val engine = QuestLogEngine(clock = clock, idFactory = { "counter-${++nextId}" })
+        val quest = Quest(
+            id = "run",
+            title = "Run miles",
+            xp = 100,
+            cadence = "counter",
+            goalUnit = "mile",
+        )
+        val state = QuestLogState(quests = listOf(quest))
+
+        val first = engine.completeQuest(state, quest.id, progressAmount = 3)
+        val second = engine.completeQuest(first.state, quest.id, progressAmount = 2)
+        val progress = engine.progressFor(second.state, quest)
+
+        assertEquals(300, first.completion?.xpAwarded)
+        assertEquals(200, second.completion?.xpAwarded)
+        assertEquals(500, engine.totalXp(second.state))
+        assertEquals(5, progress.progressInCycle)
+        assertTrue(engine.canComplete(second.state, quest))
+    }
+
+    @Test
+    fun `counter quests coerce blank or zero amount to one unit`() {
+        val engine = QuestLogEngine(clock = clock, idFactory = { "counter" })
+        val quest = Quest(
+            id = "dogs",
+            title = "See a dog",
+            xp = 10,
+            cadence = "counter",
+            goalUnit = "dog",
+        )
+
+        val result = engine.completeQuest(QuestLogState(quests = listOf(quest)), quest.id, progressAmount = 0)
+
+        assertEquals(1, result.completion?.progressAmount)
+        assertEquals(10, result.completion?.xpAwarded)
+        assertEquals("Logged 1 dog for 10 XP", result.message)
+    }
+
     private fun completion(id: String, xp: Int) =
         com.paruchan.questlog.core.Completion(
             id = id,

@@ -5,8 +5,10 @@ import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestPackExporter
 import com.paruchan.questlog.core.QuestPackImporter
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -59,6 +61,28 @@ class QuestPackExporterTest {
 
         assertEquals(1, imported.imported)
         assertEquals("Spot a paruchan", imported.state.quests.single().title)
+        assertTrue(imported.errors.isEmpty())
+    }
+
+    @Test
+    fun `bundled thank you pack imports as a single 5000 xp quest`() {
+        val importer = QuestPackImporter(clock = clock)
+        val packFile = listOf(
+            File("src/main/assets/quest-packs/thank-you-paruchan.json"),
+            File("app/src/main/assets/quest-packs/thank-you-paruchan.json"),
+        ).first { it.exists() }
+        val json = packFile.readText()
+
+        val imported = importer.mergeQuestPack(com.paruchan.questlog.core.QuestLogState(), json)
+        val quest = imported.state.quests.single()
+
+        assertEquals(1, imported.imported)
+        assertEquals("thank_you_paruchan", quest.id)
+        assertEquals("Thank you paruchan", quest.title)
+        assertEquals(5000, quest.xp)
+        assertEquals("Paruchan", quest.category)
+        assertEquals("paruchan", quest.icon)
+        assertFalse(quest.repeatable)
         assertTrue(imported.errors.isEmpty())
     }
 }

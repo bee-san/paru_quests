@@ -1,23 +1,27 @@
 package com.paruchan.questlog.ui
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -61,7 +65,6 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
@@ -76,7 +79,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -181,7 +183,7 @@ fun ParuchanQuestLogApp(
                             selected = screen == item,
                             onClick = { screen = item },
                             icon = { Icon(item.icon, contentDescription = item.label) },
-                            label = { Text(item.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            label = { Text(item.label, maxLines = 1) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Gold,
                                 selectedTextColor = Gold,
@@ -204,7 +206,6 @@ fun ParuchanQuestLogApp(
                     )
                     .padding(padding),
             ) {
-                SparkleField(Modifier.fillMaxSize())
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -224,7 +225,7 @@ fun ParuchanQuestLogApp(
                                 availableQuests = viewModel.state.quests.filter { viewModel.canComplete(it) },
                                 canComplete = viewModel::canComplete,
                                 progressFor = viewModel::progressFor,
-                                onComplete = viewModel::completeQuest,
+                                onComplete = { questId, amount -> viewModel.completeQuest(questId, amount) },
                                 onShowQuests = { screen = Screen.Quests },
                                 onShowFiles = { screen = Screen.Files },
                                 onShowSettings = { screen = Screen.Settings },
@@ -235,7 +236,7 @@ fun ParuchanQuestLogApp(
                                 completedQuestIds = viewModel.completedQuestIds,
                                 canComplete = viewModel::canComplete,
                                 progressFor = viewModel::progressFor,
-                                onComplete = viewModel::completeQuest,
+                                onComplete = { questId, amount -> viewModel.completeQuest(questId, amount) },
                             )
 
                             Screen.History -> HistoryScreen(
@@ -245,6 +246,7 @@ fun ParuchanQuestLogApp(
 
                             Screen.Files -> ImportExportScreen(
                                 onImportQuestPack = onImportQuestPack,
+                                onImportBundledPack = { viewModel.importBundledThankYouPack(context) },
                                 onExportQuestPack = onExportQuestPack,
                                 onShareQuestPack = onShareQuestPack,
                                 onExportBackup = onExportBackup,
@@ -268,18 +270,19 @@ private fun FantasyHeader(screen: Screen) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(132.dp),
+            .heightIn(min = 132.dp),
     ) {
         Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .padding(start = 8.dp, top = 18.dp),
+                .padding(start = 8.dp, top = 18.dp, end = 118.dp),
         ) {
             DisplayText(
                 text = screen.title,
                 size = if (screen == Screen.Home) 32.sp else 42.sp,
                 color = Gold,
                 weight = FontWeight.Bold,
+                maxLines = 2,
             )
             if (screen == Screen.Home) {
                 DisplayText(
@@ -287,12 +290,14 @@ private fun FantasyHeader(screen: Screen) {
                     size = 27.sp,
                     color = Gold,
                     weight = FontWeight.SemiBold,
+                    maxLines = 2,
                 )
             }
             Text(
-                text = "sparkles, tiny wins, steady progress",
+                text = "tiny wins, steady progress",
                 color = Lilac.copy(alpha = 0.78f),
                 style = MaterialTheme.typography.bodySmall,
+                lineHeight = 18.sp,
             )
         }
         Mascot(
@@ -332,7 +337,7 @@ private fun DashboardScreen(
     availableQuests: List<Quest>,
     canComplete: (Quest) -> Boolean,
     progressFor: (Quest) -> QuestProgress,
-    onComplete: (String) -> Unit,
+    onComplete: (String, Int) -> Unit,
     onShowQuests: () -> Unit,
     onShowFiles: () -> Unit,
     onShowSettings: () -> Unit,
@@ -391,7 +396,7 @@ private fun DashboardScreen(
                     completed = false,
                     enabled = canComplete(quest),
                     compact = true,
-                    onComplete = { onComplete(quest.id) },
+                    onComplete = { amount -> onComplete(quest.id, amount) },
                 )
             }
         }
@@ -458,7 +463,7 @@ private fun LevelCard(progress: LevelProgress) {
 @Composable
 private fun StatCard(title: String, value: String, subtitle: String, modifier: Modifier = Modifier) {
     Card(
-        modifier = modifier.height(94.dp),
+        modifier = modifier.heightIn(min = 104.dp),
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
         colors = CardDefaults.cardColors(containerColor = Parchment.copy(alpha = 0.96f)),
@@ -471,20 +476,21 @@ private fun StatCard(title: String, value: String, subtitle: String, modifier: M
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            DisplayText(value, 24.sp, Ink, FontWeight.Bold)
-            Text(title, color = Ink, style = MaterialTheme.typography.labelLarge)
-            Text(subtitle, color = MutedInk, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            DisplayText(value, 24.sp, Ink, FontWeight.Bold, maxLines = 1)
+            Text(title, color = Ink, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
+            Text(subtitle, color = MutedInk, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
         }
     }
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun QuestsScreen(
     quests: List<Quest>,
     completedQuestIds: Set<String>,
     canComplete: (Quest) -> Boolean,
     progressFor: (Quest) -> QuestProgress,
-    onComplete: (String) -> Unit,
+    onComplete: (String, Int) -> Unit,
 ) {
     var tab by rememberSaveable { mutableStateOf(QuestTab.Active) }
     var category by rememberSaveable { mutableStateOf("All") }
@@ -494,6 +500,7 @@ private fun QuestsScreen(
             QuestTab.Active -> canComplete(quest)
             QuestTab.Dailies -> QuestCadence.from(quest) == QuestCadence.Daily
             QuestTab.Goals -> quest.goalTarget > 1
+            QuestTab.Counters -> QuestCadence.from(quest) == QuestCadence.Counter
             QuestTab.Timed -> quest.timerMinutes != null
             QuestTab.Completed -> quest.id in completedQuestIds && !quest.repeatable
             QuestTab.Repeatable -> quest.repeatable
@@ -503,20 +510,26 @@ private fun QuestsScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             QuestTab.entries.forEach { item ->
-                item {
-                    FilterPill(
-                        text = item.label,
-                        selected = tab == item,
-                        onClick = { tab = item },
-                    )
-                }
+                FilterPill(
+                    text = item.label,
+                    selected = tab == item,
+                    onClick = { tab = item },
+                )
             }
         }
         Spacer(Modifier.height(12.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(categories) { item ->
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            categories.forEach { item ->
                 FilterPill(text = item, selected = category == item, onClick = { category = item })
             }
         }
@@ -535,7 +548,7 @@ private fun QuestsScreen(
                         progress = progressFor(quest),
                         completed = quest.id in completedQuestIds,
                         enabled = canComplete(quest),
-                        onComplete = { onComplete(quest.id) },
+                        onComplete = { amount -> onComplete(quest.id, amount) },
                     )
                 }
             }
@@ -550,58 +563,88 @@ private fun QuestListCard(
     completed: Boolean,
     enabled: Boolean,
     compact: Boolean = false,
-    onComplete: () -> Unit,
+    onComplete: (Int) -> Unit,
 ) {
+    val cadence = progress.cadence
     Card(
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, Gold.copy(alpha = 0.28f)),
         colors = CardDefaults.cardColors(containerColor = Parchment.copy(alpha = 0.98f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            CircleQuestIcon(modifier = Modifier.size(if (compact) 54.dp else 70.dp), icon = quest.icon)
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                DisplayText(quest.title, if (compact) 21.sp else 24.sp, Ink, FontWeight.Bold)
-                if (quest.flavourText.isNotBlank()) {
-                    Text(
-                        quest.flavourText,
-                        color = MutedInk,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = if (compact) 1 else 2,
-                        overflow = TextOverflow.Ellipsis,
+            Row(verticalAlignment = Alignment.Top) {
+                CircleQuestIcon(modifier = Modifier.size(if (compact) 54.dp else 70.dp), icon = quest.icon)
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    DisplayText(
+                        quest.title,
+                        if (compact) 21.sp else 24.sp,
+                        Ink,
+                        FontWeight.Bold,
+                        maxLines = 3,
                     )
-                }
-                if (!compact) {
-                    Spacer(Modifier.height(6.dp))
-                    QuestMetaRow(quest = quest, progress = progress)
-                    if (progress.hasGoal) {
-                        Spacer(Modifier.height(8.dp))
-                        GoalProgressBar(progress = progress)
+                    if (quest.flavourText.isNotBlank()) {
+                        Text(
+                            quest.flavourText,
+                            color = MutedInk,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = if (compact) 2 else 4,
+                        )
                     }
-                    quest.timerMinutes?.let { minutes ->
-                        Spacer(Modifier.height(8.dp))
-                        QuestTimer(questId = quest.id, minutes = minutes)
+                    if (!compact) {
+                        Spacer(Modifier.height(6.dp))
+                        QuestMetaRow(quest = quest, progress = progress)
+                        if (progress.hasGoal) {
+                            Spacer(Modifier.height(8.dp))
+                            GoalProgressBar(progress = progress)
+                        }
+                        quest.timerMinutes?.let { minutes ->
+                            Spacer(Modifier.height(8.dp))
+                            QuestTimer(questId = quest.id, minutes = minutes)
+                        }
+                    } else {
+                        Spacer(Modifier.height(5.dp))
+                        QuestMetaRow(quest = quest, progress = progress, compact = true)
                     }
-                } else {
-                    Spacer(Modifier.height(5.dp))
-                    QuestMetaRow(quest = quest, progress = progress, compact = true)
                 }
             }
-            Spacer(Modifier.width(10.dp))
-            Column(horizontalAlignment = Alignment.End) {
-                DisplayText("${quest.xp} XP", 22.sp, Plum, FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    DisplayText(
+                        if (cadence == QuestCadence.Counter) "${quest.xp} XP / ${progress.unit}" else "${quest.xp} XP",
+                        22.sp,
+                        Plum,
+                        FontWeight.SemiBold,
+                        maxLines = 2,
+                    )
+                    if (progress.hasGoal && !compact) {
+                        Text("XP awarded when the goal completes", color = MutedInk, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 if (progress.hasGoal && !compact) {
                     Text("on goal", color = MutedInk, style = MaterialTheme.typography.bodySmall)
                 }
+                if (cadence == QuestCadence.Counter) {
+                    CounterLogControls(
+                        questId = quest.id,
+                        unit = progress.unit,
+                        enabled = enabled,
+                        onLog = onComplete,
+                    )
+                } else {
+                    CompleteButton(enabled = enabled, completed = completed && !quest.repeatable, onClick = { onComplete(1) })
+                }
             }
-            Spacer(Modifier.width(10.dp))
-            CompleteButton(enabled = enabled, completed = completed && !quest.repeatable, onClick = onComplete)
         }
     }
 }
@@ -617,8 +660,7 @@ private fun QuestMetaRow(
             compactMetaText(quest, progress),
             color = Plum,
             style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            maxLines = 3,
         )
         return
     }
@@ -626,6 +668,9 @@ private fun QuestMetaRow(
     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         item { MetaChip(progress.cadence.label) }
         item { MetaChip(quest.category.ifBlank { "General" }) }
+        if (progress.cadence == QuestCadence.Counter) {
+            item { MetaChip("${progress.progressInCycle} ${progress.unit} logged") }
+        }
         if (progress.hasGoal) {
             item { MetaChip("${progress.progressInCycle}/${progress.target} ${progress.unit}") }
         }
@@ -641,6 +686,7 @@ private fun QuestMetaRow(
 private fun compactMetaText(quest: Quest, progress: QuestProgress): String =
     buildList {
         add(progress.cadence.label)
+        if (progress.cadence == QuestCadence.Counter) add("${progress.progressInCycle} ${progress.unit} logged")
         if (progress.hasGoal) add("${progress.progressInCycle}/${progress.target} ${progress.unit}")
         quest.timerMinutes?.let { add("${it}m timer") }
         add(quest.category.ifBlank { "General" })
@@ -648,24 +694,26 @@ private fun compactMetaText(quest: Quest, progress: QuestProgress): String =
 
 private fun compactPackQuestText(quest: Quest): String =
     buildList {
-        add(QuestCadence.from(quest).label)
+        val cadence = QuestCadence.from(quest)
+        add(cadence.label)
         if (quest.goalTarget > 1) add("${quest.goalTarget} ${quest.goalUnit}")
         quest.timerMinutes?.let { add("${it}m timer") }
-        add("${quest.xp} XP")
+        add(if (cadence == QuestCadence.Counter) "${quest.xp} XP / ${quest.goalUnit}" else "${quest.xp} XP")
     }.joinToString(" / ")
 
 @Composable
 private fun MetaChip(text: String) {
     Box(
         modifier = Modifier
-            .height(28.dp)
+            .heightIn(min = 28.dp)
+            .widthIn(min = 32.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(Lilac.copy(alpha = 0.48f))
             .border(BorderStroke(1.dp, Gold.copy(alpha = 0.25f)), RoundedCornerShape(8.dp))
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = Plum, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        Text(text, color = Plum, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -758,6 +806,42 @@ private fun TimerButton(
 }
 
 @Composable
+private fun CounterLogControls(
+    questId: String,
+    unit: String,
+    enabled: Boolean,
+    onLog: (Int) -> Unit,
+) {
+    var amountText by rememberSaveable(questId, "counterAmount") { mutableStateOf("1") }
+    val amount = amountText.toIntOrNull()?.coerceAtLeast(1)
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OutlinedTextField(
+            value = amountText,
+            onValueChange = { amountText = it.filter(Char::isDigit).take(4) },
+            modifier = Modifier.widthIn(min = 76.dp, max = 96.dp),
+            label = { Text(unit) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            shape = RoundedCornerShape(8.dp),
+        )
+        Button(
+            onClick = { amount?.let(onLog) },
+            enabled = enabled && amount != null,
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
+            border = BorderStroke(1.dp, Gold),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Text("Log", maxLines = 1)
+        }
+    }
+}
+
+@Composable
 private fun CompleteButton(enabled: Boolean, completed: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
@@ -804,15 +888,15 @@ private fun HistoryScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Top,
                 ) {
                     CircleQuestIcon(modifier = Modifier.size(54.dp), icon = quest?.icon.orEmpty())
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        DisplayText(quest?.title ?: "Unknown quest", 21.sp, Ink, FontWeight.Bold)
+                        DisplayText(quest?.title ?: "Unknown quest", 21.sp, Ink, FontWeight.Bold, maxLines = 3)
                         Text(shortDate(completion.completedAt), color = MutedInk, style = MaterialTheme.typography.bodySmall)
+                        DisplayText("+${completion.xpAwarded} XP", 21.sp, Plum, FontWeight.Bold, maxLines = 1)
                     }
-                    DisplayText("+${completion.xpAwarded} XP", 21.sp, Plum, FontWeight.Bold)
                 }
             }
         }
@@ -822,6 +906,7 @@ private fun HistoryScreen(
 @Composable
 private fun ImportExportScreen(
     onImportQuestPack: () -> Unit,
+    onImportBundledPack: () -> Unit,
     onExportQuestPack: (String) -> Unit,
     onShareQuestPack: (String) -> Unit,
     onExportBackup: () -> Unit,
@@ -840,6 +925,14 @@ private fun ImportExportScreen(
             QuestPackMaker(
                 onExportQuestPack = onExportQuestPack,
                 onShareQuestPack = onShareQuestPack,
+            )
+        }
+        item {
+            OrnateActionButton(
+                icon = Icons.Outlined.Star,
+                title = "Add thank-you pack",
+                detail = "One bundled quest: Thank you paruchan, 5000 XP",
+                onClick = onImportBundledPack,
             )
         }
         item {
@@ -870,6 +963,7 @@ private fun ImportExportScreen(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun QuestPackMaker(
     onExportQuestPack: (String) -> Unit,
     onShareQuestPack: (String) -> Unit,
@@ -901,9 +995,9 @@ private fun QuestPackMaker(
             icon = icon.trim().ifBlank { "star" },
             repeatable = cadence == QuestCadence.Repeatable,
             cadence = cadence.wireName,
-            goalTarget = goalTarget,
-            goalUnit = goalUnit.trim().ifBlank { "completion" },
-            timerMinutes = timerMinutes,
+            goalTarget = if (cadence == QuestCadence.Counter) 1 else goalTarget,
+            goalUnit = goalUnit.trim().ifBlank { if (cadence == QuestCadence.Counter) "unit" else "completion" },
+            timerMinutes = if (cadence == QuestCadence.Counter) null else timerMinutes,
         )
     }
 
@@ -937,61 +1031,52 @@ private fun QuestPackMaker(
                 onValueChange = { flavourText = it },
                 label = "Flavour text",
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                CompactTextField(
-                    value = xpText,
-                    onValueChange = { xpText = it.filter(Char::isDigit).ifBlank { "0" } },
-                    label = "XP",
-                    numeric = true,
-                    modifier = Modifier.weight(0.7f),
-                )
-                CompactTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    label = "Category",
-                    modifier = Modifier.weight(1.3f),
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            CompactTextField(
+                value = xpText,
+                onValueChange = { xpText = it.filter(Char::isDigit).ifBlank { "0" } },
+                label = if (cadence == QuestCadence.Counter) "XP per unit" else "XP",
+                numeric = true,
+            )
+            CompactTextField(
+                value = category,
+                onValueChange = { category = it },
+                label = "Category",
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 QuestCadence.entries.forEach { item ->
-                    FilterPill(
-                        text = item.label,
-                        selected = cadence == item,
-                        onClick = { cadence = item },
-                        modifier = Modifier.weight(1f),
-                    )
+                    FilterPill(text = item.label, selected = cadence == item, onClick = { cadence = item })
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            if (cadence != QuestCadence.Counter) {
                 CompactTextField(
                     value = goalTargetText,
                     onValueChange = { goalTargetText = it.filter(Char::isDigit).ifBlank { "1" } },
                     label = "Goal target",
                     numeric = true,
-                    modifier = Modifier.weight(1f),
-                )
-                CompactTextField(
-                    value = goalUnit,
-                    onValueChange = { goalUnit = it },
-                    label = "Unit",
-                    modifier = Modifier.weight(1f),
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            CompactTextField(
+                value = goalUnit,
+                onValueChange = { goalUnit = it },
+                label = if (cadence == QuestCadence.Counter) "Counter unit" else "Unit",
+            )
+            if (cadence != QuestCadence.Counter) {
                 CompactTextField(
                     value = timerMinutesText,
                     onValueChange = { timerMinutesText = it.filter(Char::isDigit).take(4) },
                     label = "Timer minutes",
                     numeric = true,
-                    modifier = Modifier.weight(1f),
-                )
-                CompactTextField(
-                    value = icon,
-                    onValueChange = { icon = it },
-                    label = "Icon",
-                    modifier = Modifier.weight(1f),
                 )
             }
+            CompactTextField(
+                value = icon,
+                onValueChange = { icon = it },
+                label = "Icon",
+            )
 
             Button(
                 onClick = {
@@ -1012,7 +1097,7 @@ private fun QuestPackMaker(
             ) {
                 Icon(Icons.Outlined.AddCircle, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                DisplayText("Add quest to pack", 20.sp, Gold, FontWeight.Bold)
+                DisplayText("Add quest to pack", 20.sp, Gold, FontWeight.Bold, maxLines = 2, textAlign = TextAlign.Center)
             }
 
             if (packQuests.isNotEmpty()) {
@@ -1038,7 +1123,7 @@ private fun QuestPackMaker(
                 ) {
                     Icon(Icons.Outlined.FileDownload, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Export")
+                    Text("Export", maxLines = 1)
                 }
                 Button(
                     onClick = { onShareQuestPack(packJson()) },
@@ -1049,7 +1134,7 @@ private fun QuestPackMaker(
                 ) {
                     Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Share")
+                    Text("Share", maxLines = 1)
                 }
             }
         }
@@ -1067,7 +1152,9 @@ private fun CompactTextField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp),
         label = { Text(label) },
         singleLine = true,
         keyboardOptions = if (numeric) KeyboardOptions(keyboardType = KeyboardType.Number) else KeyboardOptions.Default,
@@ -1097,8 +1184,7 @@ private fun DraftQuestRow(
                 compactPackQuestText(quest),
                 color = MutedInk,
                 style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                maxLines = 3,
             )
         }
         Icon(
@@ -1130,13 +1216,13 @@ private fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    .padding(16.dp),
+                    verticalAlignment = Alignment.Top,
                 ) {
                     LevelBadge(7)
                     Spacer(Modifier.width(14.dp))
-                    Column {
-                        DisplayText("Version ${BuildConfig.VERSION_NAME}", 24.sp, Ink, FontWeight.Bold)
+                    Column(modifier = Modifier.weight(1f)) {
+                        DisplayText("Version ${BuildConfig.VERSION_NAME}", 24.sp, Ink, FontWeight.Bold, maxLines = 2)
                         Text(BuildConfig.UPDATE_REPOSITORY, color = MutedInk, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
@@ -1148,7 +1234,7 @@ private fun SettingsScreen(
                 enabled = !updateInProgress,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(64.dp),
+                    .heightIn(min = 64.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
                 border = BorderStroke(1.dp, Gold),
@@ -1159,7 +1245,7 @@ private fun SettingsScreen(
                     Icon(Icons.Outlined.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(24.dp))
                 }
                 Spacer(Modifier.width(10.dp))
-                DisplayText("Check for update", 24.sp, Gold, FontWeight.Bold)
+                DisplayText("Check for update", 24.sp, Gold, FontWeight.Bold, maxLines = 2, textAlign = TextAlign.Center)
             }
         }
     }
@@ -1176,7 +1262,7 @@ private fun OrnateActionButton(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .height(82.dp),
+            .heightIn(min = 86.dp),
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, Gold.copy(alpha = 0.65f)),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink),
@@ -1184,7 +1270,7 @@ private fun OrnateActionButton(
         Icon(icon, contentDescription = null, tint = Plum, modifier = Modifier.size(30.dp))
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-            DisplayText(title, 23.sp, Ink, FontWeight.Bold)
+            DisplayText(title, 23.sp, Ink, FontWeight.Bold, maxLines = 3)
             Text(detail, color = MutedInk, style = MaterialTheme.typography.bodyMedium)
         }
     }
@@ -1199,14 +1285,14 @@ private fun QuickAction(
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.height(58.dp),
+        modifier = modifier.heightIn(min = 58.dp),
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, Gold.copy(alpha = 0.55f)),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink),
     ) {
         Icon(icon, contentDescription = null, tint = Plum, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(6.dp))
-        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, maxLines = 1)
     }
 }
 
@@ -1219,7 +1305,8 @@ private fun FilterPill(
 ) {
     Box(
         modifier = modifier
-            .height(46.dp)
+            .heightIn(min = 46.dp)
+            .widthIn(min = 76.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (selected) Plum else Parchment.copy(alpha = 0.8f))
             .border(BorderStroke(1.dp, if (selected) Gold else Gold.copy(alpha = 0.35f)), RoundedCornerShape(8.dp))
@@ -1231,8 +1318,8 @@ private fun FilterPill(
             text = text,
             color = if (selected) Gold else Ink,
             style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
         )
     }
 }
@@ -1243,16 +1330,27 @@ private fun SectionHeader(
     action: String? = null,
     onAction: () -> Unit = {},
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        DisplayText("✦ $title", 23.sp, Ink, FontWeight.Bold)
-        Spacer(Modifier.width(10.dp))
-        OrnamentLine(Modifier.weight(1f))
-        if (action != null) {
-            TextButton(onClick = onAction) {
-                Text(action, color = Plum)
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        if (maxWidth < 340.dp && action != null) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                DisplayText("✦ $title", 23.sp, Ink, FontWeight.Bold, maxLines = 3)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OrnamentLine(Modifier.weight(1f))
+                    TextButton(onClick = onAction) {
+                        Text(action, color = Plum)
+                    }
+                }
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                DisplayText("✦ $title", 23.sp, Ink, FontWeight.Bold, maxLines = 2)
+                Spacer(Modifier.width(10.dp))
+                OrnamentLine(Modifier.weight(1f))
+                if (action != null) {
+                    TextButton(onClick = onAction) {
+                        Text(action, color = Plum)
+                    }
+                }
             }
         }
     }
@@ -1343,30 +1441,15 @@ private fun Mascot(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SparkleField(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val points = listOf(
-            Offset(size.width * 0.16f, size.height * 0.08f),
-            Offset(size.width * 0.28f, size.height * 0.15f),
-            Offset(size.width * 0.74f, size.height * 0.10f),
-            Offset(size.width * 0.86f, size.height * 0.20f),
-            Offset(size.width * 0.18f, size.height * 0.34f),
-            Offset(size.width * 0.78f, size.height * 0.40f),
-        )
-        points.forEachIndexed { index, point ->
-            val radius = if (index % 2 == 0) 4.dp.toPx() else 2.5.dp.toPx()
-            drawLine(Gold.copy(alpha = 0.7f), Offset(point.x - radius, point.y), Offset(point.x + radius, point.y), 1.4.dp.toPx())
-            drawLine(Gold.copy(alpha = 0.7f), Offset(point.x, point.y - radius), Offset(point.x, point.y + radius), 1.4.dp.toPx())
-        }
-    }
-}
-
-@Composable
 private fun DisplayText(
     text: String,
     size: androidx.compose.ui.unit.TextUnit,
     color: Color = Ink,
     weight: FontWeight = FontWeight.Normal,
+    modifier: Modifier = Modifier,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
+    textAlign: TextAlign? = null,
 ) {
     Text(
         text = text,
@@ -1375,7 +1458,11 @@ private fun DisplayText(
         fontWeight = weight,
         fontFamily = FontFamily.Serif,
         letterSpacing = 0.sp,
-        lineHeight = size * 1.05f,
+        lineHeight = size * 1.18f,
+        modifier = modifier,
+        maxLines = maxLines,
+        overflow = overflow,
+        textAlign = textAlign,
     )
 }
 
@@ -1393,6 +1480,7 @@ private enum class QuestTab(val label: String) {
     Active("Active"),
     Dailies("Dailies"),
     Goals("Goals"),
+    Counters("Counters"),
     Timed("Timed"),
     Repeatable("Repeat"),
     Completed("Completed"),
@@ -1407,5 +1495,5 @@ private enum class Screen(
     Quests("Quests", "Quests", Icons.AutoMirrored.Outlined.Assignment),
     History("Log", "Quest Log", Icons.Outlined.History),
     Files("Files", "Library", Icons.Outlined.ImportExport),
-    Settings("Settings", "Settings", Icons.Outlined.Settings),
+    Settings("Prefs", "Settings", Icons.Outlined.Settings),
 }

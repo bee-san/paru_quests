@@ -109,6 +109,44 @@ class QuestPackImporterTest {
     }
 
     @Test
+    fun `imports counter quests with xp per unit`() {
+        val result = importer.mergeQuestPack(
+            QuestLogState(),
+            """
+            [
+              {
+                "title": "Run a mile",
+                "flavourText": "Every mile counts.",
+                "xpPerUnit": 100,
+                "category": "Fitness",
+                "counter": true,
+                "unit": "mile"
+              },
+              {
+                "title": "Spot a dog",
+                "xp": 10,
+                "category": "Outside",
+                "cadence": "counter",
+                "goalUnit": "dog"
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        val run = result.state.quests.first { it.title == "Run a mile" }
+        val dog = result.state.quests.first { it.title == "Spot a dog" }
+
+        assertEquals(2, result.imported)
+        assertEquals("counter", run.cadence)
+        assertEquals(100, run.xp)
+        assertEquals("mile", run.goalUnit)
+        assertEquals(false, run.repeatable)
+        assertEquals("counter", dog.cadence)
+        assertEquals(10, dog.xp)
+        assertEquals("dog", dog.goalUnit)
+    }
+
+    @Test
     fun `invalid quests are skipped with validation errors`() {
         val result = importer.mergeQuestPack(
             QuestLogState(),

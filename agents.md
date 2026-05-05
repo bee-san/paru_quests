@@ -5,7 +5,8 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 ## Product Scope
 
 - Target: native Android APK only.
-- V1 is tracker-only: no accounts, no server, no database, no bundled quest data, and no built-in AI/image generation.
+- V1 is tracker-only: no accounts, no server, no database, and no built-in AI/image generation.
+- The app ships one user-requested bundled quest pack at `app/src/main/assets/quest-packs/thank-you-paruchan.json`; it contains only `Thank you paruchan` for `5000 XP`.
 - Quest data is private user data. It lives only in local app storage or user-imported/exported JSON files.
 - The stable Android package/application id is `com.paruchan.questlog`; do not change it casually because sideloaded updates depend on package and signing continuity.
 - Canonical paruchan reference: `/home/bee/Downloads/paruchan.jpg`. Paruchans are soft white plush blobs with rounded cat ears, blue embroidered eyes, a pink nose, and pink cheek/whisker stripes. Do not draw them as generic fantasy cats, do not add smiles, and do not add separate arms, paws, or feet.
@@ -30,6 +31,7 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 - Non-repeatable quests become unavailable after their first completion.
 - Repeatable quests remain available and append another completion each time.
 - Daily quests use `cadence: "daily"` and become unavailable after today's goal target is reached; they reset on the next local day.
+- Counter quests use `cadence: "counter"` and treat `xp` as XP per `goalUnit`. Logging `3` miles on a `100 XP / mile` quest appends one completion with `progressAmount: 3` and `xpAwarded: 300`.
 - Multi-step goals use `goalTarget > 1`; progress entries can award `0 XP` until the target is reached, then the quest XP is awarded.
 - Timed quests use `timerMinutes`; timers are foreground UI helpers and do not run as background services in v1.
 - Default level curve is in `DefaultLevels.kt`; preserve the tested threshold `3550 XP -> Level 7, Visa Bard of Babsy`.

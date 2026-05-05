@@ -70,7 +70,8 @@ data class QuestProgress(
 enum class QuestCadence(val wireName: String, val label: String) {
     Once("once", "One-off"),
     Daily("daily", "Daily"),
-    Repeatable("repeatable", "Repeatable");
+    Repeatable("repeatable", "Repeatable"),
+    Counter("counter", "Counter");
 
     companion object {
         fun from(quest: Quest): QuestCadence = from(quest.cadence, quest.repeatable)
@@ -79,6 +80,7 @@ enum class QuestCadence(val wireName: String, val label: String) {
             return when (value.orEmpty().trim().lowercase()) {
                 "daily", "day", "dailies" -> Daily
                 "repeatable", "repeat", "repeating", "weekly", "monthly" -> Repeatable
+                "counter", "count", "per", "per-unit", "per_unit" -> Counter
                 else -> if (repeatable) Repeatable else Once
             }
         }
