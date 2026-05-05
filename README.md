@@ -6,6 +6,8 @@ The app stores all quest data locally in `filesDir/questlog.json`. Android cloud
 
 The Files screen includes one bundled starter pack: a single `Thank you paruchan` quest worth `5000 XP`. Importing it merges the quest into local app data just like any other quest pack.
 
+Settings includes daily quest reminders. Reminder notifications are local-only and are posted only when the quest log still has uncompleted available quests.
+
 ## Quest Types
 
 Quest packs can include one-off quests, repeatable quests, dailies, counter quests, multi-step goals, and foreground timers:

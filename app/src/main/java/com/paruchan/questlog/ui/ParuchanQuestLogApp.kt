@@ -1,5 +1,7 @@
 package com.paruchan.questlog.ui
 
+import android.app.TimePickerDialog
+import android.text.format.DateFormat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -64,6 +66,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Switch
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -103,6 +106,7 @@ import com.paruchan.questlog.core.LevelProgress
 import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestCadence
 import com.paruchan.questlog.core.QuestProgress
+import com.paruchan.questlog.notification.QuestNotificationSettings
 import kotlinx.coroutines.delay
 
 private val DeepPlum = Color(0xFF23143F)
@@ -137,6 +141,7 @@ fun ParuchanQuestLogApp(
     onShareQuestPack: (String) -> Unit,
     onExportBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
+    onEnableQuestNotifications: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -271,7 +276,11 @@ fun ParuchanQuestLogApp(
                                 updateInProgress = viewModel.updateInProgress,
                                 sharedPackImportInProgress = viewModel.sharedPackImportInProgress,
                                 sharedPackPasswordSaved = viewModel.sharedPackPasswordSaved,
+                                questNotificationSettings = viewModel.questNotificationSettings,
                                 onCheckForUpdate = { viewModel.checkForUpdate(context) },
+                                onQuestNotificationTimeChange = viewModel::updateQuestNotificationTime,
+                                onEnableQuestNotifications = onEnableQuestNotifications,
+                                onDisableQuestNotifications = viewModel::disableQuestNotifications,
                                 onSaveSharedPackPassword = viewModel::saveSharedPackPassword,
                                 onClearSharedPackPassword = viewModel::clearSharedPackPassword,
                                 onImportSharedPacks = viewModel::importSharedPacks,
@@ -1233,7 +1242,11 @@ private fun SettingsScreen(
     updateInProgress: Boolean,
     sharedPackImportInProgress: Boolean,
     sharedPackPasswordSaved: Boolean,
+    questNotificationSettings: QuestNotificationSettings,
     onCheckForUpdate: () -> Unit,
+    onQuestNotificationTimeChange: (Int, Int) -> Unit,
+    onEnableQuestNotifications: () -> Unit,
+    onDisableQuestNotifications: () -> Unit,
     onSaveSharedPackPassword: (String) -> Unit,
     onClearSharedPackPassword: () -> Unit,
     onImportSharedPacks: () -> Unit,
@@ -1282,6 +1295,14 @@ private fun SettingsScreen(
                 Spacer(Modifier.width(10.dp))
                 DisplayText("Check for update", 24.sp, Gold, FontWeight.Bold, maxLines = 2, textAlign = TextAlign.Center)
             }
+        }
+        item {
+            QuestReminderSettingsCard(
+                settings = questNotificationSettings,
+                onTimeChange = onQuestNotificationTimeChange,
+                onEnable = onEnableQuestNotifications,
+                onDisable = onDisableQuestNotifications,
+            )
         }
         item {
             Card(
@@ -1368,6 +1389,78 @@ private fun SettingsScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuestReminderSettingsCard(
+    settings: QuestNotificationSettings,
+    onTimeChange: (Int, Int) -> Unit,
+    onEnable: () -> Unit,
+    onDisable: () -> Unit,
+) {
+    val context = LocalContext.current
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
+        colors = CardDefaults.cardColors(containerColor = Parchment),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Timer, contentDescription = null, tint = Plum, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    DisplayText("Quest reminders", 24.sp, Ink, FontWeight.Bold, maxLines = 1)
+                    Text(
+                        if (settings.enabled) "Daily at ${settings.timeLabel}" else "Off",
+                        color = MutedInk,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Switch(
+                    checked = settings.enabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled) onEnable() else onDisable()
+                    },
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        TimePickerDialog(
+                            context,
+                            { _, hour, minute -> onTimeChange(hour, minute) },
+                            settings.hour,
+                            settings.minute,
+                            DateFormat.is24HourFormat(context),
+                        ).show()
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Plum.copy(alpha = 0.42f)),
+                ) {
+                    Icon(Icons.Outlined.Timer, contentDescription = null, tint = Plum, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Time ${settings.timeLabel}", maxLines = 1, color = Plum)
+                }
+                Text(
+                    "Uncompleted only",
+                    color = MutedInk,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }

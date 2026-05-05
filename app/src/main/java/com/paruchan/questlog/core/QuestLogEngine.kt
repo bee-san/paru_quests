@@ -24,6 +24,16 @@ class QuestLogEngine(
             .filter { progressFor(state, it).isComplete }
             .mapTo(mutableSetOf()) { it.id }
 
+    fun reminderQuests(state: QuestLogState): List<Quest> =
+        state.quests
+            .filter { canComplete(state, it) }
+            .sortedWith(
+                compareByDescending<Quest> { QuestCadence.from(it) == QuestCadence.Daily }
+                    .thenByDescending { it.timerMinutes != null }
+                    .thenByDescending { it.goalTarget > 1 }
+                    .thenBy { it.title.lowercase() },
+            )
+
     fun progressFor(state: QuestLogState, quest: Quest): QuestProgress {
         val cadence = QuestCadence.from(quest)
         val target = quest.goalTarget.coerceAtLeast(1)

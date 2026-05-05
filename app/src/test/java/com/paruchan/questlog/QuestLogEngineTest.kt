@@ -1,5 +1,7 @@
 package com.paruchan.questlog
 
+import com.paruchan.questlog.core.Completion
+import com.paruchan.questlog.core.DailyQuestMessages
 import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestLogEngine
 import com.paruchan.questlog.core.QuestLogState
@@ -11,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Clock
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 
 class QuestLogEngineTest {
@@ -172,8 +175,63 @@ class QuestLogEngineTest {
         assertEquals("Logged 1 dog for 10 XP", result.message)
     }
 
+    @Test
+    fun `reminder quests include only available unfinished quests`() {
+        val engine = QuestLogEngine(clock = clock)
+        val openDaily = Quest(id = "daily-open", title = "Open daily", xp = 10, cadence = "daily")
+        val doneDaily = Quest(id = "daily-done", title = "Done daily", xp = 10, cadence = "daily")
+        val openGoal = Quest(id = "goal-open", title = "Open goal", xp = 30, goalTarget = 3)
+        val doneOnce = Quest(id = "once-done", title = "Done once", xp = 20)
+        val archived = Quest(id = "archived", title = "Archived", xp = 20, archived = true)
+        val counter = Quest(id = "counter", title = "Counter", xp = 5, cadence = "counter", goalUnit = "paruchan")
+        val state = QuestLogState(
+            quests = listOf(doneOnce, openGoal, doneDaily, archived, counter, openDaily),
+            completions = listOf(
+                Completion(id = "done-once", questId = doneOnce.id, completedAt = "2026-05-05T09:00:00Z", xpAwarded = 20),
+                Completion(id = "done-daily", questId = doneDaily.id, completedAt = "2026-05-05T09:00:00Z", xpAwarded = 10),
+                Completion(id = "goal-progress", questId = openGoal.id, completedAt = "2026-05-05T09:00:00Z", xpAwarded = 0),
+            ),
+        )
+
+        assertEquals(
+            listOf("daily-open", "goal-open", "counter"),
+            engine.reminderQuests(state).map { it.id },
+        )
+    }
+
+    @Test
+    fun `daily reminder quests reset after the completion day`() {
+        val todayEngine = QuestLogEngine(clock = clock)
+        val tomorrowClock = Clock.fixed(Instant.parse("2026-05-06T09:00:00Z"), ZoneOffset.UTC)
+        val tomorrowEngine = QuestLogEngine(clock = tomorrowClock)
+        val daily = Quest(id = "daily", title = "Daily", xp = 10, cadence = "daily")
+        val state = QuestLogState(
+            quests = listOf(daily),
+            completions = listOf(
+                Completion(id = "done-daily", questId = daily.id, completedAt = "2026-05-05T09:00:00Z", xpAwarded = 10),
+            ),
+        )
+
+        assertTrue(todayEngine.reminderQuests(state).isEmpty())
+        assertEquals(listOf("daily"), tomorrowEngine.reminderQuests(state).map { it.id })
+    }
+
+    @Test
+    fun `daily quest messages include cute paruchan notes and rotate by date`() {
+        assertTrue("Paru is proud of you!!" in DailyQuestMessages.messages)
+        assertTrue("I love my paruchan!!!" in DailyQuestMessages.messages)
+
+        val today = DailyQuestMessages.forDate(LocalDate.of(2026, 5, 5))
+        val tomorrow = DailyQuestMessages.forDate(LocalDate.of(2026, 5, 6))
+
+        assertEquals(today, DailyQuestMessages.forDate(LocalDate.of(2026, 5, 5)))
+        assertTrue(today in DailyQuestMessages.messages)
+        assertTrue(tomorrow in DailyQuestMessages.messages)
+        assertTrue(DailyQuestMessages.messages.size > 2)
+    }
+
     private fun completion(id: String, xp: Int) =
-        com.paruchan.questlog.core.Completion(
+        Completion(
             id = id,
             questId = "quest-$id",
             completedAt = "2026-05-05T12:00:00Z",

@@ -20,6 +20,9 @@ import com.paruchan.questlog.core.QuestPackExporter
 import com.paruchan.questlog.data.BundledSharedPackRepository
 import com.paruchan.questlog.data.QuestLogRepository
 import com.paruchan.questlog.data.SharedPackSecretStore
+import com.paruchan.questlog.notification.QuestNotificationPreferences
+import com.paruchan.questlog.notification.QuestNotificationScheduler
+import com.paruchan.questlog.notification.QuestNotificationSettings
 import com.paruchan.questlog.update.GitHubReleaseUpdater
 import com.paruchan.questlog.update.InstallResult
 import com.paruchan.questlog.update.UpdateCheckResult
@@ -33,6 +36,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
     private val repository = QuestLogRepository(File(application.filesDir, "questlog.json"))
     private val sharedPackRepository = BundledSharedPackRepository(application, repository)
     private val sharedPackSecretStore = SharedPackSecretStore(application)
+    private val questNotificationPreferences = QuestNotificationPreferences(application)
     private val engine = QuestLogEngine()
     private val questPackExporter = QuestPackExporter()
     private val updater = GitHubReleaseUpdater(
@@ -59,6 +63,9 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
     var pendingRestoreUri: Uri? by mutableStateOf(null)
         private set
 
+    var questNotificationSettings: QuestNotificationSettings by mutableStateOf(questNotificationPreferences.load())
+        private set
+
     var questPackDraft: QuestPackDraft by mutableStateOf(QuestPackDraft())
         private set
 
@@ -78,6 +85,36 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
 
     fun clearMessage() {
         message = null
+    }
+
+    fun updateQuestNotificationTime(hour: Int, minute: Int) {
+        val next = questNotificationSettings.copy(hour = hour, minute = minute).normalized()
+        questNotificationSettings = next
+        questNotificationPreferences.save(next)
+        if (next.enabled) {
+            QuestNotificationScheduler.scheduleNext(getApplication(), next)
+            message = "Quest reminders set for ${next.timeLabel}"
+        }
+    }
+
+    fun enableQuestNotifications() {
+        val next = questNotificationSettings.copy(enabled = true).normalized()
+        questNotificationSettings = next
+        questNotificationPreferences.save(next)
+        QuestNotificationScheduler.scheduleNext(getApplication(), next)
+        message = "Quest reminders set for ${next.timeLabel}"
+    }
+
+    fun disableQuestNotifications() {
+        val next = questNotificationSettings.copy(enabled = false).normalized()
+        questNotificationSettings = next
+        questNotificationPreferences.save(next)
+        QuestNotificationScheduler.cancel(getApplication())
+        message = "Quest reminders off"
+    }
+
+    fun notificationPermissionDenied() {
+        message = "Notifications permission is required for reminders"
     }
 
     fun completeQuest(questId: String, progressAmount: Int = 1) {
