@@ -59,6 +59,7 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 - Full backup export writes the whole app state JSON through `ACTION_CREATE_DOCUMENT`.
 - Full backup restore replaces the whole state only after user confirmation.
 - Backups include `levels` so future custom curves can be edited/imported without a v1 level designer UI.
+- Automatic daily local backups are private app files under `filesDir/questlog-backups/`; keep only the newest 10 dated `questlog-YYYY-MM-DD.json` snapshots.
 
 ## Updater And Release Assumptions
 

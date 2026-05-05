@@ -1,14 +1,21 @@
 package com.paruchan.questlog
 
 import com.paruchan.questlog.core.Quest
+import com.paruchan.questlog.core.QuestLogJsonCodec
 import com.paruchan.questlog.core.QuestLogState
 import com.paruchan.questlog.data.QuestLogRepository
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 
 class BackupRoundTripTest {
     @get:Rule
@@ -65,6 +72,47 @@ class BackupRoundTripTest {
         assertEquals("Keep me", repository.load().quests.single().title)
     }
 
+    @Test
+    fun `local db backup is dated and created once per day`() {
+        val stateFile = File(temp.root, "questlog.json")
+        val backupDirectory = File(temp.root, "questlog-backups")
+        val repository = QuestLogRepository(
+            stateFile = stateFile,
+            clock = fixedClock(day = 5),
+            backupDirectory = backupDirectory,
+        )
+
+        repository.save(QuestLogState(quests = listOf(Quest(id = "q1", title = "First save", xp = 15))))
+        repository.save(QuestLogState(quests = listOf(Quest(id = "q2", title = "Second save", xp = 20))))
+
+        val backups = backupDirectory.backupNames()
+        val backedUp = QuestLogJsonCodec().decodeState(File(backupDirectory, backups.single()).readText())
+
+        assertEquals(listOf("questlog-2026-05-05.json"), backups)
+        assertEquals("First save", backedUp.quests.single().title)
+    }
+
+    @Test
+    fun `local db backups keep newest ten copies`() {
+        val stateFile = File(temp.root, "questlog.json")
+        val backupDirectory = File(temp.root, "questlog-backups")
+
+        for (day in 1..12) {
+            QuestLogRepository(
+                stateFile = stateFile,
+                clock = fixedClock(day),
+                backupDirectory = backupDirectory,
+            ).save(QuestLogState(quests = listOf(Quest(id = "q$day", title = "Day $day", xp = day))))
+        }
+
+        val backups = backupDirectory.backupNames()
+
+        assertEquals(10, backups.size)
+        assertFalse(backups.contains("questlog-2026-05-01.json"))
+        assertFalse(backups.contains("questlog-2026-05-02.json"))
+        assertTrue(backups.contains("questlog-2026-05-12.json"))
+    }
+
     private fun assertIllegalArgument(block: () -> Unit): IllegalArgumentException {
         return try {
             block()
@@ -74,4 +122,13 @@ class BackupRoundTripTest {
             error
         }
     }
+
+    private fun fixedClock(day: Int): Clock =
+        Clock.fixed(Instant.parse("2026-05-${day.toString().padStart(2, '0')}T12:00:00Z"), ZoneOffset.UTC)
+
+    private fun File.backupNames(): List<String> =
+        listFiles()
+            ?.map { it.name }
+            ?.sorted()
+            .orEmpty()
 }

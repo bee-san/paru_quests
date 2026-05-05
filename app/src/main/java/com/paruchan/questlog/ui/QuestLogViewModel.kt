@@ -143,7 +143,8 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
                 }
                 if (
                     quest != null &&
-                    result.completion.xpAwarded > 0
+                    result.completion.xpAwarded > 0 &&
+                    QuestGoalType.from(quest) != QuestGoalType.Counter
                 ) {
                     completionCelebration = CompletionCelebration(
                         id = result.completion.id,

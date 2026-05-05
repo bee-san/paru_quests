@@ -2,7 +2,7 @@
 
 Native Android MVP for a private two-person quest tracker.
 
-The app stores all quest data locally in `filesDir/questlog.json`. Android cloud backup is disabled. There are no accounts, no server, no database, and no built-in AI image generation.
+The app stores all quest data locally in `filesDir/questlog.json`. Android cloud backup is disabled. There are no accounts, no server, no database, and no built-in AI image generation. The app also keeps private daily local snapshots under `filesDir/questlog-backups/`, retaining the newest 10 copies.
 
 The Files screen includes one bundled starter pack: a single `Thank you paruchan` quest worth `5000 XP`. Importing any quest pack makes that pack the current open quest set: older quests are archived without adding completions or XP, while matching quest IDs update in place.
 
