@@ -5,6 +5,10 @@ import com.paruchan.questlog.core.QuestLogJsonCodec
 import com.paruchan.questlog.core.QuestLogState
 import com.paruchan.questlog.core.QuestPackImporter
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.time.Clock
 import java.time.Instant
 
@@ -22,11 +26,17 @@ class QuestLogRepository(
 
     @Synchronized
     fun save(state: QuestLogState) {
-        stateFile.parentFile?.mkdirs()
-        val temp = File(stateFile.parentFile, "${stateFile.name}.tmp")
+        val parent = stateFile.absoluteFile.parentFile ?: error("State file must have a parent directory")
+        parent.mkdirs()
+        val temp = File(parent, "${stateFile.name}.tmp")
         temp.writeText(codec.encode(state))
-        if (!temp.renameTo(stateFile)) {
-            temp.copyTo(stateFile, overwrite = true)
+        try {
+            try {
+                Files.move(temp.toPath(), stateFile.absoluteFile.toPath(), REPLACE_EXISTING, ATOMIC_MOVE)
+            } catch (error: AtomicMoveNotSupportedException) {
+                Files.move(temp.toPath(), stateFile.absoluteFile.toPath(), REPLACE_EXISTING)
+            }
+        } finally {
             temp.delete()
         }
     }
@@ -40,7 +50,7 @@ class QuestLogRepository(
 
     @Synchronized
     fun restoreBackup(json: String): QuestLogState {
-        val restored = codec.decodeState(json)
+        val restored = codec.decodeBackup(json)
         save(restored)
         return restored
     }

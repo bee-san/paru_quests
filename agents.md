@@ -6,8 +6,9 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 
 - Target: native Android APK only.
 - V1 is tracker-only: no accounts, no server, no database, and no built-in AI/image generation.
+- Curated private quest packs may be shipped as encrypted APK assets under `app/src/main/assets/shared-packs/`; this is not remote sync and must not include GitHub tokens or accounts.
 - The app ships one user-requested bundled quest pack at `app/src/main/assets/quest-packs/thank-you-paruchan.json`; it contains only `Thank you paruchan` for `5000 XP`.
-- Quest data is private user data. It lives only in local app storage or user-imported/exported JSON files.
+- Quest data is private user data. It lives only in local app storage or user-imported/exported JSON files; Android cloud backup stays disabled.
 - The stable Android package/application id is `com.paruchan.questlog`; do not change it casually because sideloaded updates depend on package and signing continuity.
 - Canonical paruchan reference: `/home/bee/Downloads/paruchan.jpg`. Paruchans are soft white plush blobs with rounded cat ears, blue embroidered eyes, a pink nose, and pink cheek/whisker stripes. Do not draw them as generic fantasy cats, do not add smiles, and do not add separate arms, paws, or feet.
 
@@ -44,6 +45,10 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 - Import merges into existing quests.
 - If an imported quest has `id`, update by `id`.
 - If no `id` is present, derive a stable ID from normalized `title/category/xp/flavourText/repeatable` to avoid duplicates on re-import.
+- Encrypted shared packs use `kind: "paruchan.encrypted-quest-pack"` with PBKDF2-HMAC-SHA256 and AES-256-GCM. The decrypted payload is the existing quest-pack JSON format.
+- The shared-pack password is entered in Settings, stored locally with an Android Keystore key, and used to auto-import bundled shared packs on app launch after an APK update.
+- Do not hardcode shared-pack passwords in app code, docs, tests, or committed assets. The local ignored env file is `agent-skills/paruchan-shared-packs/.env`; the tracked example is `.env.example`.
+- Use `agent-skills/paruchan-shared-packs/SKILL.md` and `tools/encrypt_shared_pack.sh` when adding private shared packs. Keep plaintext packs outside git, preferably under `/tmp`, and commit only encrypted assets.
 - Full backup export writes the whole app state JSON through `ACTION_CREATE_DOCUMENT`.
 - Full backup restore replaces the whole state only after user confirmation.
 - Backups include `levels` so future custom curves can be edited/imported without a v1 level designer UI.
@@ -54,6 +59,7 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 - The updater reads the latest public GitHub Release for `BuildConfig.UPDATE_REPOSITORY`.
 - Default update repo is `bee-san/paru_quests`; override with `-PupdateRepository=owner/repo`.
 - It compares release tag against `BuildConfig.VERSION_NAME`, selects a release APK asset, downloads it, verifies a `.sha256` sidecar when present, and opens Android's package installer.
+- Encrypted shared-pack updates ride inside the APK. After Paru installs an update and opens the app, saved-password auto-import picks up new bundled assets.
 - The app declares `INTERNET`, `REQUEST_INSTALL_PACKAGES`, and a `FileProvider`.
 - Do not embed GitHub tokens. Releases must be public or otherwise available through unauthenticated URLs.
 - Android cannot silently update sideloaded APKs; keep the explicit installer/unknown-sources UX.
@@ -65,13 +71,14 @@ Use the repo wrapper:
 
 ```bash
 ./gradlew test
+./gradlew lintDebug
 ./gradlew assembleDebug
 ```
 
 Useful combined verification:
 
 ```bash
-./gradlew --no-daemon test assembleDebug
+./gradlew --no-daemon test lintDebug assembleDebug
 ```
 
 Debug APK output:
@@ -87,6 +94,7 @@ The test suite covers:
 - Repeatable quest completion.
 - Non-repeatable lockout.
 - Quest-pack validation, merge, and duplicate prevention.
+- Encrypted shared-pack decryption, wrong-password failure, idempotent import markers, and quest updates preserving completions.
 - Backup export/restore round trip.
 - GitHub release version comparison and APK asset selection.
 

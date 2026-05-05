@@ -46,7 +46,10 @@ class QuestPackImporter(
                 order += quest.id
                 imported++
             } else {
-                existingById[quest.id] = quest.copy(createdAt = existing.createdAt.ifBlank { quest.createdAt })
+                existingById[quest.id] = quest.copy(
+                    createdAt = existing.createdAt.ifBlank { quest.createdAt },
+                    archived = existing.archived || quest.archived,
+                )
                 updated++
             }
         }
@@ -108,14 +111,17 @@ class QuestPackImporter(
                 ?: timer?.int("minutes")
                 ?: timer?.int("timerMinutes")
             )?.coerceIn(1, 24 * 60)
+        val icon = obj.string("icon").trim().ifBlank { "star" }
         val explicitId = obj.string("id").trim()
         val id = explicitId.ifBlank {
             stableQuestId(
                 title = title,
                 category = category,
-                xp = xp,
-                flavourText = flavourText,
-                repeatable = cadence == QuestCadence.Repeatable,
+                cadence = cadence,
+                goalTarget = goalTarget,
+                goalUnit = goalUnit,
+                timerMinutes = timerMinutes,
+                icon = icon,
             )
         }
 
@@ -126,7 +132,7 @@ class QuestPackImporter(
                 flavourText = flavourText,
                 xp = xp,
                 category = category,
-                icon = obj.string("icon").trim().ifBlank { "star" },
+                icon = icon,
                 repeatable = cadence == QuestCadence.Repeatable,
                 cadence = cadence.wireName,
                 goalTarget = goalTarget,
@@ -141,11 +147,21 @@ class QuestPackImporter(
     private fun stableQuestId(
         title: String,
         category: String,
-        xp: Int,
-        flavourText: String,
-        repeatable: Boolean,
+        cadence: QuestCadence,
+        goalTarget: Int,
+        goalUnit: String,
+        timerMinutes: Int?,
+        icon: String,
     ): String {
-        val normalized = listOf(title, category, xp.toString(), flavourText, repeatable.toString())
+        val normalized = listOf(
+            title,
+            category,
+            cadence.wireName,
+            goalTarget.toString(),
+            goalUnit,
+            timerMinutes?.toString().orEmpty(),
+            icon,
+        )
             .joinToString("|") { it.trim().lowercase().replace(Regex("\\s+"), " ") }
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(normalized.toByteArray())

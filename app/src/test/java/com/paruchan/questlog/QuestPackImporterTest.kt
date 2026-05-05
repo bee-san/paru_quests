@@ -2,6 +2,7 @@ package com.paruchan.questlog
 
 import com.paruchan.questlog.core.QuestLogState
 import com.paruchan.questlog.core.QuestPackImporter
+import com.paruchan.questlog.core.Quest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -80,6 +81,63 @@ class QuestPackImporterTest {
         assertEquals(1, second.updated)
         assertEquals("Prep docs properly", second.state.quests.single().title)
         assertEquals(150, second.state.quests.single().xp)
+    }
+
+    @Test
+    fun `implicit ids survive mutable text and xp updates`() {
+        val first = importer.mergeQuestPack(
+            QuestLogState(),
+            """[{"title":"Eat Thai food","flavourText":"Tasty","xp":150,"category":"Food"}]""",
+        )
+        val firstId = first.state.quests.single().id
+
+        val second = importer.mergeQuestPack(
+            first.state,
+            """[{"title":"Eat Thai food","flavourText":"Very tasty","xp":175,"category":"Food"}]""",
+        )
+
+        assertEquals(0, second.imported)
+        assertEquals(1, second.updated)
+        assertEquals(1, second.state.quests.size)
+        assertEquals(firstId, second.state.quests.single().id)
+        assertEquals(175, second.state.quests.single().xp)
+        assertEquals("Very tasty", second.state.quests.single().flavourText)
+    }
+
+    @Test
+    fun `implicit ids include cadence and goal shape to avoid collisions`() {
+        val result = importer.mergeQuestPack(
+            QuestLogState(),
+            """
+            [
+              {"title":"Run","xp":10,"category":"Fitness","cadence":"once"},
+              {"title":"Run","xp":10,"category":"Fitness","cadence":"counter","goalUnit":"mile"},
+              {"title":"Run","xp":10,"category":"Fitness","cadence":"daily","goalTarget":3,"goalUnit":"lap"}
+            ]
+            """.trimIndent(),
+        )
+
+        assertEquals(3, result.imported)
+        assertEquals(3, result.state.quests.map { it.id }.distinct().size)
+    }
+
+    @Test
+    fun `reimport preserves local archived state`() {
+        val existing = Quest(
+            id = "local",
+            title = "Local quest",
+            xp = 10,
+            archived = true,
+        )
+
+        val result = importer.mergeQuestPack(
+            QuestLogState(quests = listOf(existing)),
+            """[{"id":"local","title":"Local quest updated","xp":25}]""",
+        )
+
+        assertEquals(1, result.updated)
+        assertEquals("Local quest updated", result.state.quests.single().title)
+        assertEquals(true, result.state.quests.single().archived)
     }
 
     @Test

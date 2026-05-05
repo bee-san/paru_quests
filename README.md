@@ -2,7 +2,7 @@
 
 Native Android MVP for a private two-person quest tracker.
 
-The app stores all quest data locally in `filesDir/questlog.json`. There are no accounts, no server, no database, and no built-in AI image generation.
+The app stores all quest data locally in `filesDir/questlog.json`. Android cloud backup is disabled. There are no accounts, no server, no database, and no built-in AI image generation.
 
 The Files screen includes one bundled starter pack: a single `Thank you paruchan` quest worth `5000 XP`. Importing it merges the quest into local app data just like any other quest pack.
 
@@ -40,17 +40,30 @@ Logging `3` miles awards `300 XP`.
 
 The Files screen includes a quest-pack maker. Add quests to a temporary pack, then export the JSON through Android's file picker or share it through the Android share sheet.
 
+## Encrypted Shared Packs
+
+Curated private quest packs can be encrypted and bundled directly into the APK under `app/src/main/assets/shared-packs/`. Paru saves the shared-pack password once in Settings; the app stores it with Android Keystore-backed encryption and auto-imports new bundled packs after APK updates.
+
+To create an encrypted shared pack, put the plaintext pack JSON outside the repo and run:
+
+```bash
+bash tools/encrypt_shared_pack.sh /tmp/plain-pack.json app/src/main/assets/shared-packs/<pack-id>.encrypted.json <pack-id> <pack-version>
+```
+
+The script reads `agent-skills/paruchan-shared-packs/.env`, which is ignored by git. Commit only encrypted shared-pack assets.
+
 ## Build
 
 ```bash
 ./gradlew test
+./gradlew lintDebug
 ./gradlew assembleDebug
 ```
 
 This environment currently needs a valid Android SDK path. If `ANDROID_HOME` points at an empty SDK, run with:
 
 ```bash
-ANDROID_HOME=/home/bee/Documents/src/github/thaiwrite/.android-sdk ./gradlew test assembleDebug
+ANDROID_HOME=/home/bee/Documents/src/github/thaiwrite/.android-sdk ./gradlew test lintDebug assembleDebug
 ```
 
 ## Update Repository

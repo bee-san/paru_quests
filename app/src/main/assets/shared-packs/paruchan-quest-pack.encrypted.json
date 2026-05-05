@@ -1,0 +1,12 @@
+{
+  "kind": "paruchan.encrypted-quest-pack",
+  "schemaVersion": 1,
+  "packId": "paruchan-quest-pack",
+  "packVersion": "1",
+  "kdf": "PBKDF2WithHmacSHA256",
+  "iterations": 210000,
+  "cipher": "AES-256-GCM",
+  "salt": "gx+5PaqqVNJbJEwMew1z+g==",
+  "iv": "2G5h54rEyHwzrYze",
+  "ciphertext": "bsw+A7T/ZDMyvzLsewliQlRVlq6Vrrh4ecMEqE8Qo+nqByu+mgVbjOjYLsm+sAnbUswv/PZRAmT1SqdomCZDMOtLErMqeo1Aq509XrrZcZZRP8EWxoAuusjCrE0Xm1OSzKHOYrf9URAtsUv9yn5ADKL/ei8SQyztEJohOUtqvdhGVYhRUVqJRQaAPB2hKBzNj0q6T+iObUV3KSeK4H80vtIaNknC1AeHBJ0bSvjJ9yV5qym3Qq3158ddJJusqZW2SpnIAXfM9C4C++zAxKyj+mLmI7l0L+aJ3r3ANVF3zysrTuAvyHsB7MljR1e+14Ovi+FQqrujG8UpdqMZDtvhhB1+Ytwz/A544LqrwWbqokOrbGnbmFIVpt4ZsBCjU74n+3JGVNXYfIi+R/fGIumYUjftNvT5ZyLf4dD3lz1db3bBVvDM1CLOVmISpXT5Irn/o8ltFedjq38zuvrlxhG4737Aeb6+VGsmcbeGj7FrczgWQWtgAI9baF2hPAQyvDMRJSsKgKBAqSQpARo1ZTCQacfhHfOm5UrGPYyEGbvDNEkIEq3CPvcWD60BK30fycm0VVlxds2PHw1xYAJk6zyh5IpD3aiyFcd0Pqp5DhaEroXinEMnipnmtfARBFy43egpWiOX+1t+TzOQAY0SJg6Upm6Iy2mcaVxqyFTlHAV7/YIkmfTzv1HansUYo3ezfcurvC+lbZs/iRvDk6P5Ls/irS/fu4QCwAgAXHTV79EPFtbi3KvT6cRdHumH1vF1UUOokIOrBGrsz/Z4v0q/SRqQAxo8ezAjHoTn2A9E1W0gc/dlQpYxPZrW6mB2VDEv69wqMLEq/mFPS/a5uI4TCgymXRHWg94lz2zpAgUvJBkRrG4w5WiEw97wbD/qF7E1ftyaQ6ZyneBGbYxCbaYZyAaJJFZk6kJ6awCJozLX+da3XaoIAlyb+NK31uSwsEOhp0sTkZpLDCMT2q9VWQfrs7euumMX9m4w9eC/pN99neF0JzAHPF8jmjuS/gnJU/9bPSnGhQqR7vOErsBVSRbBxhELUoKWUSGQV5lZ4Lt/aqdlEEwOtg7FRnHWHy4F4wO6TCNVOYnMWbguQatq9U9P2QDtqxm2kO6SxVmPKx7ayk+iUiZVpT+WpKpJ/k4ljmJ67Kmj1qaj8Dcwc7GejJbX5bDNJ+SMHjAR4dP2yhk/ijdhtMc="
+}

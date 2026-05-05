@@ -6,10 +6,12 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import com.google.gson.JsonParseException
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -69,17 +71,29 @@ object VersionComparator {
 
 object GitHubReleaseParser {
     fun parseRelease(json: String): ReleaseInfo {
-        val obj = JsonParser.parseString(json).asJsonObject
-        val assets = obj["assets"]?.asJsonArray?.mapNotNull { element ->
-            val asset = element.asJsonObject
-            val name = asset["name"]?.asString.orEmpty()
-            val url = asset["browser_download_url"]?.asString.orEmpty()
-            if (name.isBlank() || url.isBlank()) null else ReleaseAsset(name = name, downloadUrl = url)
-        }.orEmpty()
+        val obj = try {
+            JsonParser.parseString(json).takeIf { it.isJsonObject }?.asJsonObject
+        } catch (error: JsonParseException) {
+            throw IllegalArgumentException("GitHub release response is not valid JSON", error)
+        } ?: throw IllegalArgumentException("GitHub release response is not an object")
+
+        val assets = obj["assets"]
+            ?.takeIf { it.isJsonArray }
+            ?.asJsonArray
+            ?.mapNotNull { element ->
+                val asset = element.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
+                val name = asset.optionalString("name")
+                val url = asset.optionalString("browser_download_url")
+                if (name.isBlank() || url.isBlank()) null else ReleaseAsset(name = name, downloadUrl = url)
+            }
+            .orEmpty()
+
+        val tagName = obj.optionalString("tag_name")
+        require(tagName.isNotBlank()) { "GitHub release response is missing tag_name" }
 
         return ReleaseInfo(
-            tagName = obj["tag_name"]?.asString.orEmpty(),
-            htmlUrl = obj["html_url"]?.asString.orEmpty(),
+            tagName = tagName,
+            htmlUrl = obj.optionalString("html_url"),
             assets = assets,
         )
     }
@@ -102,6 +116,9 @@ object GitHubReleaseParser {
 
         return UpdateCandidate(release = release, apk = apk, checksum = checksum)
     }
+
+    private fun com.google.gson.JsonObject.optionalString(name: String): String =
+        runCatching { this[name]?.takeUnless { it.isJsonNull }?.asString.orEmpty().trim() }.getOrDefault("")
 }
 
 class GitHubReleaseUpdater(
@@ -168,19 +185,29 @@ class GitHubReleaseUpdater(
 
     private fun getText(url: String): String {
         val connection = URL(url).openConnection() as HttpURLConnection
-        connection.setRequestProperty("Accept", "application/vnd.github+json")
-        connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 30_000
-        return connection.inputStream.bufferedReader().use { it.readText() }
+        return try {
+            connection.setRequestProperty("Accept", "application/vnd.github+json")
+            connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 30_000
+            connection.requireSuccess()
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun downloadTo(url: String, target: File) {
         val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 60_000
-        connection.inputStream.use { input ->
-            target.outputStream().use { output -> input.copyTo(output) }
+        try {
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 60_000
+            connection.requireSuccess()
+            connection.inputStream.use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+        } finally {
+            connection.disconnect()
         }
     }
 
@@ -195,5 +222,18 @@ class GitHubReleaseUpdater(
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun HttpURLConnection.requireSuccess() {
+        val code = responseCode
+        if (code !in 200..299) {
+            val responseMessage = errorStream
+                ?.bufferedReader()
+                ?.use { it.readText().trim() }
+                ?.takeIf { it.isNotBlank() }
+                ?: this.responseMessage
+                ?: "HTTP $code"
+            throw IOException("GitHub request failed with HTTP $code: $responseMessage")
+        }
     }
 }

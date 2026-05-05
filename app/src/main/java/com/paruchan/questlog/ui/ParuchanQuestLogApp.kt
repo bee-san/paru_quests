@@ -37,6 +37,8 @@ import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.ImportExport
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Replay
@@ -72,7 +74,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -87,6 +88,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
@@ -99,7 +102,6 @@ import com.paruchan.questlog.core.Completion
 import com.paruchan.questlog.core.LevelProgress
 import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestCadence
-import com.paruchan.questlog.core.QuestPackExporter
 import com.paruchan.questlog.core.QuestProgress
 import kotlinx.coroutines.delay
 
@@ -144,6 +146,10 @@ fun ParuchanQuestLogApp(
         val message = viewModel.message ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Short)
         viewModel.clearMessage()
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.autoImportSharedPacks()
     }
 
     MaterialTheme(
@@ -246,6 +252,12 @@ fun ParuchanQuestLogApp(
                             )
 
                             Screen.Files -> ImportExportScreen(
+                                draft = viewModel.questPackDraft,
+                                draftQuest = viewModel.draftQuest,
+                                onDraftChange = viewModel::updateQuestPackDraft,
+                                onAddDraftQuest = viewModel::addDraftQuest,
+                                onRemoveDraftQuest = viewModel::removeDraftQuest,
+                                onBuildQuestPackJson = viewModel::questPackDraftJson,
                                 onImportQuestPack = onImportQuestPack,
                                 onImportBundledPack = { viewModel.importBundledThankYouPack(context) },
                                 onAddQuestPack = onAddQuestPack,
@@ -257,7 +269,12 @@ fun ParuchanQuestLogApp(
 
                             Screen.Settings -> SettingsScreen(
                                 updateInProgress = viewModel.updateInProgress,
+                                sharedPackImportInProgress = viewModel.sharedPackImportInProgress,
+                                sharedPackPasswordSaved = viewModel.sharedPackPasswordSaved,
                                 onCheckForUpdate = { viewModel.checkForUpdate(context) },
+                                onSaveSharedPackPassword = viewModel::saveSharedPackPassword,
+                                onClearSharedPackPassword = viewModel::clearSharedPackPassword,
+                                onImportSharedPacks = viewModel::importSharedPacks,
                             )
                         }
                     }
@@ -389,7 +406,15 @@ private fun DashboardScreen(
         }
 
         if (availableQuests.isEmpty()) {
-            item { EmptyStateCard("Import a quest pack to begin.") }
+            item {
+                EmptyStateCard(
+                    if (quests.isEmpty()) {
+                        "Import a quest pack to begin."
+                    } else {
+                        "No quests are available right now."
+                    }
+                )
+            }
         } else {
             items(spotlightQuests.take(3), key = { it.id }) { quest ->
                 QuestListCard(
@@ -815,7 +840,7 @@ private fun CounterLogControls(
     onLog: (Int) -> Unit,
 ) {
     var amountText by rememberSaveable(questId, "counterAmount") { mutableStateOf("1") }
-    val amount = amountText.toIntOrNull()?.coerceAtLeast(1)
+    val amount = amountText.toIntOrNull()?.takeIf { it > 0 }
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -832,7 +857,7 @@ private fun CounterLogControls(
         )
         Button(
             onClick = { amount?.let(onLog) },
-            enabled = enabled && amount != null,
+            enabled = enabled && amount != null && amount > 0,
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
             border = BorderStroke(1.dp, Gold),
@@ -907,6 +932,12 @@ private fun HistoryScreen(
 
 @Composable
 private fun ImportExportScreen(
+    draft: QuestPackDraft,
+    draftQuest: Quest?,
+    onDraftChange: (QuestPackDraft) -> Unit,
+    onAddDraftQuest: () -> Unit,
+    onRemoveDraftQuest: (Int) -> Unit,
+    onBuildQuestPackJson: () -> String,
     onImportQuestPack: () -> Unit,
     onImportBundledPack: () -> Unit,
     onAddQuestPack: (String) -> Unit,
@@ -926,6 +957,12 @@ private fun ImportExportScreen(
         }
         item {
             QuestPackMaker(
+                draft = draft,
+                draftQuest = draftQuest,
+                onDraftChange = onDraftChange,
+                onAddDraftQuest = onAddDraftQuest,
+                onRemoveDraftQuest = onRemoveDraftQuest,
+                onBuildQuestPackJson = onBuildQuestPackJson,
                 onAddQuestPack = onAddQuestPack,
                 onExportQuestPack = onExportQuestPack,
                 onShareQuestPack = onShareQuestPack,
@@ -969,45 +1006,16 @@ private fun ImportExportScreen(
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun QuestPackMaker(
+    draft: QuestPackDraft,
+    draftQuest: Quest?,
+    onDraftChange: (QuestPackDraft) -> Unit,
+    onAddDraftQuest: () -> Unit,
+    onRemoveDraftQuest: (Int) -> Unit,
+    onBuildQuestPackJson: () -> String,
     onAddQuestPack: (String) -> Unit,
     onExportQuestPack: (String) -> Unit,
     onShareQuestPack: (String) -> Unit,
 ) {
-    val exporter = remember { QuestPackExporter() }
-    val packQuests = remember { mutableStateListOf<Quest>() }
-    var packName by rememberSaveable { mutableStateOf("Paruchan Quest Pack") }
-    var title by rememberSaveable { mutableStateOf("") }
-    var flavourText by rememberSaveable { mutableStateOf("") }
-    var xpText by rememberSaveable { mutableStateOf("50") }
-    var category by rememberSaveable { mutableStateOf("Paruchan") }
-    var icon by rememberSaveable { mutableStateOf("star") }
-    var cadence by rememberSaveable { mutableStateOf(QuestCadence.Once) }
-    var goalTargetText by rememberSaveable { mutableStateOf("1") }
-    var goalUnit by rememberSaveable { mutableStateOf("completion") }
-    var timerMinutesText by rememberSaveable { mutableStateOf("") }
-
-    fun draftQuest(): Quest? {
-        val xp = xpText.toIntOrNull()?.coerceAtLeast(0) ?: return null
-        val goalTarget = goalTargetText.toIntOrNull()?.coerceAtLeast(1) ?: return null
-        val timerMinutes = timerMinutesText.toIntOrNull()?.coerceIn(1, 24 * 60)
-        val cleanTitle = title.trim()
-        if (cleanTitle.isBlank()) return null
-        return Quest(
-            title = cleanTitle,
-            flavourText = flavourText.trim(),
-            xp = xp,
-            category = category.trim().ifBlank { "General" },
-            icon = icon.trim().ifBlank { "star" },
-            repeatable = cadence == QuestCadence.Repeatable,
-            cadence = cadence.wireName,
-            goalTarget = if (cadence == QuestCadence.Counter) 1 else goalTarget,
-            goalUnit = goalUnit.trim().ifBlank { if (cadence == QuestCadence.Counter) "unit" else "completion" },
-            timerMinutes = if (cadence == QuestCadence.Counter) null else timerMinutes,
-        )
-    }
-
-    fun packJson(): String = exporter.encodePack(packName, packQuests.toList())
-
     Card(
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, Gold.copy(alpha = 0.42f)),
@@ -1022,29 +1030,29 @@ private fun QuestPackMaker(
         ) {
             SectionHeader("Quest Pack Maker")
             CompactTextField(
-                value = packName,
-                onValueChange = { packName = it },
+                value = draft.packName,
+                onValueChange = { onDraftChange(draft.copy(packName = it)) },
                 label = "Pack name",
             )
             CompactTextField(
-                value = title,
-                onValueChange = { title = it },
+                value = draft.title,
+                onValueChange = { onDraftChange(draft.copy(title = it)) },
                 label = "Quest title",
             )
             CompactTextField(
-                value = flavourText,
-                onValueChange = { flavourText = it },
+                value = draft.flavourText,
+                onValueChange = { onDraftChange(draft.copy(flavourText = it)) },
                 label = "Flavour text",
             )
             CompactTextField(
-                value = xpText,
-                onValueChange = { xpText = it.filter(Char::isDigit).ifBlank { "0" } },
-                label = if (cadence == QuestCadence.Counter) "XP per unit" else "XP",
+                value = draft.xpText,
+                onValueChange = { onDraftChange(draft.copy(xpText = it.filter(Char::isDigit).ifBlank { "0" })) },
+                label = if (draft.cadence == QuestCadence.Counter) "XP per unit" else "XP",
                 numeric = true,
             )
             CompactTextField(
-                value = category,
-                onValueChange = { category = it },
+                value = draft.category,
+                onValueChange = { onDraftChange(draft.copy(category = it)) },
                 label = "Category",
             )
             FlowRow(
@@ -1053,48 +1061,47 @@ private fun QuestPackMaker(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 QuestCadence.entries.forEach { item ->
-                    FilterPill(text = item.label, selected = cadence == item, onClick = { cadence = item })
+                    FilterPill(
+                        text = item.label,
+                        selected = draft.cadence == item,
+                        onClick = { onDraftChange(draft.copy(cadence = item)) },
+                    )
                 }
             }
-            if (cadence != QuestCadence.Counter) {
+            if (draft.cadence != QuestCadence.Counter) {
                 CompactTextField(
-                    value = goalTargetText,
-                    onValueChange = { goalTargetText = it.filter(Char::isDigit).ifBlank { "1" } },
+                    value = draft.goalTargetText,
+                    onValueChange = {
+                        onDraftChange(draft.copy(goalTargetText = it.filter(Char::isDigit).ifBlank { "1" }))
+                    },
                     label = "Goal target",
                     numeric = true,
                 )
             }
             CompactTextField(
-                value = goalUnit,
-                onValueChange = { goalUnit = it },
-                label = if (cadence == QuestCadence.Counter) "Counter unit" else "Unit",
+                value = draft.goalUnit,
+                onValueChange = { onDraftChange(draft.copy(goalUnit = it)) },
+                label = if (draft.cadence == QuestCadence.Counter) "Counter unit" else "Unit",
             )
-            if (cadence != QuestCadence.Counter) {
+            if (draft.cadence != QuestCadence.Counter) {
                 CompactTextField(
-                    value = timerMinutesText,
-                    onValueChange = { timerMinutesText = it.filter(Char::isDigit).take(4) },
+                    value = draft.timerMinutesText,
+                    onValueChange = {
+                        onDraftChange(draft.copy(timerMinutesText = it.filter(Char::isDigit).take(4)))
+                    },
                     label = "Timer minutes",
                     numeric = true,
                 )
             }
             CompactTextField(
-                value = icon,
-                onValueChange = { icon = it },
+                value = draft.icon,
+                onValueChange = { onDraftChange(draft.copy(icon = it)) },
                 label = "Icon",
             )
 
             Button(
-                onClick = {
-                    draftQuest()?.let { quest ->
-                        packQuests += quest
-                        title = ""
-                        flavourText = ""
-                        goalTargetText = "1"
-                        goalUnit = "completion"
-                        timerMinutesText = ""
-                    }
-                },
-                enabled = draftQuest() != null,
+                onClick = onAddDraftQuest,
+                enabled = draftQuest != null,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
@@ -1105,21 +1112,21 @@ private fun QuestPackMaker(
                 DisplayText("Add quest to pack", 20.sp, Gold, FontWeight.Bold, maxLines = 2, textAlign = TextAlign.Center)
             }
 
-            if (packQuests.isNotEmpty()) {
+            if (draft.quests.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("${packQuests.size} quest${if (packQuests.size == 1) "" else "s"} ready", color = MutedInk)
-                    packQuests.forEachIndexed { index, quest ->
+                    Text("${draft.quests.size} quest${if (draft.quests.size == 1) "" else "s"} ready", color = MutedInk)
+                    draft.quests.forEachIndexed { index, quest ->
                         DraftQuestRow(
                             quest = quest,
-                            onRemove = { packQuests.removeAt(index) },
+                            onRemove = { onRemoveDraftQuest(index) },
                         )
                     }
                 }
             }
 
             Button(
-                onClick = { onAddQuestPack(packJson()) },
-                enabled = packQuests.isNotEmpty(),
+                onClick = { onAddQuestPack(onBuildQuestPackJson()) },
+                enabled = draft.quests.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
@@ -1132,8 +1139,8 @@ private fun QuestPackMaker(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(
-                    onClick = { onExportQuestPack(packJson()) },
-                    enabled = packQuests.isNotEmpty(),
+                    onClick = { onExportQuestPack(onBuildQuestPackJson()) },
+                    enabled = draft.quests.isNotEmpty(),
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
@@ -1144,8 +1151,8 @@ private fun QuestPackMaker(
                     Text("Export", maxLines = 1)
                 }
                 Button(
-                    onClick = { onShareQuestPack(packJson()) },
-                    enabled = packQuests.isNotEmpty(),
+                    onClick = { onShareQuestPack(onBuildQuestPackJson()) },
+                    enabled = draft.quests.isNotEmpty(),
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = GoldDeep, contentColor = Color.White),
@@ -1166,6 +1173,8 @@ private fun CompactTextField(
     label: String,
     modifier: Modifier = Modifier,
     numeric: Boolean = false,
+    keyboardType: KeyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
     OutlinedTextField(
         value = value,
@@ -1175,7 +1184,8 @@ private fun CompactTextField(
             .heightIn(min = 64.dp),
         label = { Text(label) },
         singleLine = true,
-        keyboardOptions = if (numeric) KeyboardOptions(keyboardType = KeyboardType.Number) else KeyboardOptions.Default,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        visualTransformation = visualTransformation,
         shape = RoundedCornerShape(8.dp),
     )
 }
@@ -1221,8 +1231,15 @@ private fun DraftQuestRow(
 @Composable
 private fun SettingsScreen(
     updateInProgress: Boolean,
+    sharedPackImportInProgress: Boolean,
+    sharedPackPasswordSaved: Boolean,
     onCheckForUpdate: () -> Unit,
+    onSaveSharedPackPassword: (String) -> Unit,
+    onClearSharedPackPassword: () -> Unit,
+    onImportSharedPacks: () -> Unit,
 ) {
+    var sharedPackPassword by remember { mutableStateOf("") }
+
     LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 18.dp)) {
         item {
             SectionHeader("Settings")
@@ -1264,6 +1281,93 @@ private fun SettingsScreen(
                 }
                 Spacer(Modifier.width(10.dp))
                 DisplayText("Check for update", 24.sp, Gold, FontWeight.Bold, maxLines = 2, textAlign = TextAlign.Center)
+            }
+        }
+        item {
+            Card(
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
+                colors = CardDefaults.cardColors(containerColor = Parchment),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (sharedPackPasswordSaved) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+                            contentDescription = null,
+                            tint = Plum,
+                            modifier = Modifier.size(28.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            DisplayText("Shared packs", 24.sp, Ink, FontWeight.Bold, maxLines = 1)
+                            Text(
+                                if (sharedPackPasswordSaved) {
+                                    "Password saved. New bundled packs import after updates."
+                                } else {
+                                    "Save the password to unlock encrypted bundled packs."
+                                },
+                                color = MutedInk,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+
+                    CompactTextField(
+                        value = sharedPackPassword,
+                        onValueChange = { sharedPackPassword = it },
+                        label = "Shared pack password",
+                        keyboardType = KeyboardType.Password,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+
+                    Button(
+                        onClick = {
+                            onSaveSharedPackPassword(sharedPackPassword)
+                            sharedPackPassword = ""
+                        },
+                        enabled = sharedPackPassword.isNotBlank() && !sharedPackImportInProgress,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
+                        border = BorderStroke(1.dp, Gold),
+                    ) {
+                        Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Save password", maxLines = 1)
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = onImportSharedPacks,
+                            enabled = sharedPackPasswordSaved && !sharedPackImportInProgress,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = GoldDeep, contentColor = Color.White),
+                        ) {
+                            if (sharedPackImportInProgress) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                            } else {
+                                Icon(Icons.Outlined.FileDownload, contentDescription = null, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Text("Import now", maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = onClearSharedPackPassword,
+                            enabled = sharedPackPasswordSaved && !sharedPackImportInProgress,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Plum.copy(alpha = 0.42f)),
+                        ) {
+                            Text("Clear", maxLines = 1, color = Plum)
+                        }
+                    }
+                }
             }
         }
     }

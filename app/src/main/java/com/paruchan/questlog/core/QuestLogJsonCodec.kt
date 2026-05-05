@@ -2,7 +2,10 @@ package com.paruchan.questlog.core
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 import com.google.gson.JsonParseException
+import com.google.gson.JsonParser
 
 class QuestLogJsonCodec(
     private val gson: Gson = GsonBuilder()
@@ -20,6 +23,16 @@ class QuestLogJsonCodec(
         } ?: throw IllegalArgumentException("Backup is empty")
 
         return normalize(parsed)
+    }
+
+    fun decodeBackup(json: String): QuestLogState {
+        val root = parseRootObject(json)
+        require(root.int("schemaVersion") == 1) { "Backup has an unsupported schema version" }
+        require(root["quests"]?.isJsonArray == true) { "Backup is missing quests" }
+        require(root["completions"]?.isJsonArray == true) { "Backup is missing completions" }
+        require(root["levels"]?.isJsonArray == true) { "Backup is missing levels" }
+        require(root.string("exportedAt").isNotBlank()) { "Backup is missing exportedAt" }
+        return decodeState(json)
     }
 
     fun normalize(state: QuestLogState): QuestLogState {
@@ -65,4 +78,22 @@ class QuestLogJsonCodec(
             levels = levels,
         )
     }
+
+    private fun parseRootObject(json: String): JsonObject {
+        val root: JsonElement = try {
+            JsonParser.parseString(json)
+        } catch (error: JsonParseException) {
+            throw IllegalArgumentException("Backup is not valid JSON", error)
+        }
+        require(root.isJsonObject) { "Backup must be a JSON object" }
+        return root.asJsonObject
+    }
+
+    private fun JsonObject.string(name: String): String = runCatching {
+        this[name]?.takeUnless { it.isJsonNull }?.asString.orEmpty().trim()
+    }.getOrDefault("")
+
+    private fun JsonObject.int(name: String): Int? = runCatching {
+        this[name]?.takeUnless { it.isJsonNull }?.asInt
+    }.getOrNull()
 }

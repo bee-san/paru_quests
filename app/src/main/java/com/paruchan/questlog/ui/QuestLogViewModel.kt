@@ -6,15 +6,20 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.paruchan.questlog.BuildConfig
 import com.paruchan.questlog.core.LevelProgress
 import com.paruchan.questlog.core.Quest
+import com.paruchan.questlog.core.QuestCadence
 import com.paruchan.questlog.core.QuestLogEngine
 import com.paruchan.questlog.core.QuestLogState
 import com.paruchan.questlog.core.QuestProgress
+import com.paruchan.questlog.core.QuestPackExporter
+import com.paruchan.questlog.data.BundledSharedPackRepository
 import com.paruchan.questlog.data.QuestLogRepository
+import com.paruchan.questlog.data.SharedPackSecretStore
 import com.paruchan.questlog.update.GitHubReleaseUpdater
 import com.paruchan.questlog.update.InstallResult
 import com.paruchan.questlog.update.UpdateCheckResult
@@ -26,23 +31,40 @@ import java.io.File
 
 class QuestLogViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = QuestLogRepository(File(application.filesDir, "questlog.json"))
+    private val sharedPackRepository = BundledSharedPackRepository(application, repository)
+    private val sharedPackSecretStore = SharedPackSecretStore(application)
     private val engine = QuestLogEngine()
+    private val questPackExporter = QuestPackExporter()
     private val updater = GitHubReleaseUpdater(
         repository = BuildConfig.UPDATE_REPOSITORY,
         currentVersion = BuildConfig.VERSION_NAME,
     )
+    private var pendingQuestPackExportJson: String? = null
 
-    var state: QuestLogState by androidx.compose.runtime.mutableStateOf(repository.load())
+    var state: QuestLogState by mutableStateOf(QuestLogState())
         private set
 
-    var message: String? by androidx.compose.runtime.mutableStateOf(null)
+    var message: String? by mutableStateOf(null)
         private set
 
-    var updateInProgress: Boolean by androidx.compose.runtime.mutableStateOf(false)
+    var updateInProgress: Boolean by mutableStateOf(false)
         private set
 
-    var pendingRestoreUri: Uri? by androidx.compose.runtime.mutableStateOf(null)
+    var sharedPackImportInProgress: Boolean by mutableStateOf(false)
         private set
+
+    var sharedPackPasswordSaved: Boolean by mutableStateOf(sharedPackSecretStore.hasPassword())
+        private set
+
+    var pendingRestoreUri: Uri? by mutableStateOf(null)
+        private set
+
+    var questPackDraft: QuestPackDraft by mutableStateOf(QuestPackDraft())
+        private set
+
+    private val loadJob = viewModelScope.launch {
+        state = withContext(Dispatchers.IO) { repository.load() }
+    }
 
     val progress: LevelProgress
         get() = engine.levelProgress(state)
@@ -59,17 +81,30 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun completeQuest(questId: String, progressAmount: Int = 1) {
-        val result = engine.completeQuest(state, questId, progressAmount = progressAmount)
-        state = result.state
-        repository.save(state)
-        message = result.message
+        viewModelScope.launch {
+            loadJob.join()
+            val previousState = state
+            val result = engine.completeQuest(state, questId, progressAmount = progressAmount)
+            state = result.state
+            message = result.message
+            if (result.completion != null) {
+                runCatching {
+                    withContext(Dispatchers.IO) { repository.save(result.state) }
+                }.onFailure { error ->
+                    state = previousState
+                    message = error.message ?: "Quest completion failed"
+                    return@launch
+                }
+            }
+        }
     }
 
     fun importQuestPack(context: Context, uri: Uri) {
         viewModelScope.launch {
+            loadJob.join()
             runCatching {
                 val json = readText(context, uri)
-                repository.importQuestPack(json)
+                withContext(Dispatchers.IO) { repository.importQuestPack(json) }
             }.onSuccess { result ->
                 state = result.state
                 message = result.summary
@@ -81,8 +116,9 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
 
     fun addGeneratedQuestPack(json: String) {
         viewModelScope.launch {
+            loadJob.join()
             runCatching {
-                repository.importQuestPack(json)
+                withContext(Dispatchers.IO) { repository.importQuestPack(json) }
             }.onSuccess { result ->
                 state = result.state
                 message = "Added to quest log: ${result.summary}"
@@ -94,9 +130,10 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
 
     fun importBundledThankYouPack(context: Context) {
         viewModelScope.launch {
+            loadJob.join()
             runCatching {
                 val json = readAssetText(context, THANK_YOU_PACK_ASSET)
-                repository.importQuestPack(json)
+                withContext(Dispatchers.IO) { repository.importQuestPack(json) }
             }.onSuccess { result ->
                 state = result.state
                 message = "Thank-you pack: ${result.summary}"
@@ -106,8 +143,77 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    val draftQuest: Quest?
+        get() = questPackDraft.toQuest()
+
+    fun updateQuestPackDraft(draft: QuestPackDraft) {
+        questPackDraft = draft
+    }
+
+    fun addDraftQuest() {
+        val quest = draftQuest ?: return
+        questPackDraft = questPackDraft.copy(
+            quests = questPackDraft.quests + quest,
+            title = "",
+            flavourText = "",
+            goalTargetText = "1",
+            goalUnit = "completion",
+            timerMinutesText = "",
+        )
+    }
+
+    fun removeDraftQuest(index: Int) {
+        questPackDraft = questPackDraft.copy(
+            quests = questPackDraft.quests.filterIndexed { itemIndex, _ -> itemIndex != index },
+        )
+    }
+
+    fun questPackDraftJson(): String =
+        questPackExporter.encodePack(questPackDraft.packName, questPackDraft.quests)
+
+    fun prepareQuestPackExport(json: String) {
+        pendingQuestPackExportJson = json
+    }
+
+    fun consumePendingQuestPackExport(): String? {
+        val json = pendingQuestPackExportJson
+        pendingQuestPackExportJson = null
+        return json
+    }
+
+    fun saveSharedPackPassword(password: String) {
+        if (password.isBlank()) {
+            message = "Shared pack password is required"
+            return
+        }
+        importSharedPacks(
+            automatic = false,
+            passwordOverride = password,
+            savePasswordOnSuccess = true,
+        )
+    }
+
+    fun clearSharedPackPassword() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { sharedPackSecretStore.clearPassword() }
+            sharedPackPasswordSaved = false
+            message = "Shared pack password cleared"
+        }
+    }
+
+    fun autoImportSharedPacks() {
+        if (sharedPackPasswordSaved) {
+            importSharedPacks(automatic = true)
+        }
+    }
+
+    fun importSharedPacks() {
+        importSharedPacks(automatic = false)
+    }
+
     fun exportBackup(context: Context, uri: Uri) {
         viewModelScope.launch {
+            loadJob.join()
             runCatching {
                 val json = withContext(Dispatchers.IO) { repository.exportBackup() }
                 writeText(context, uri, json)
@@ -170,9 +276,10 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         val uri = pendingRestoreUri ?: return
         pendingRestoreUri = null
         viewModelScope.launch {
+            loadJob.join()
             runCatching {
                 val json = readText(context, uri)
-                repository.restoreBackup(json)
+                withContext(Dispatchers.IO) { repository.restoreBackup(json) }
             }.onSuccess { restored ->
                 state = restored
                 message = "Backup restored"
@@ -184,32 +291,95 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
 
     fun checkForUpdate(context: Context) {
         if (updateInProgress) return
+        updateInProgress = true
         viewModelScope.launch {
-            updateInProgress = true
-            message = "Checking for update"
-            runCatching {
-                when (val result = updater.checkLatest()) {
-                    is UpdateCheckResult.Available -> {
-                        message = "Downloading ${result.candidate.release.tagName}"
-                        val apk = updater.download(result.candidate, File(context.cacheDir, "updates"))
-                        when (updater.install(context, apk)) {
-                            is InstallResult.Started -> "Installer opened"
-                            InstallResult.NeedsUnknownSourcesPermission -> "Allow installs from this app, then check again"
+            try {
+                message = "Checking for update"
+                runCatching {
+                    when (val result = updater.checkLatest()) {
+                        is UpdateCheckResult.Available -> {
+                            message = "Downloading ${result.candidate.release.tagName}"
+                            val apk = updater.download(result.candidate, File(context.cacheDir, "updates"))
+                            when (updater.install(context, apk)) {
+                                is InstallResult.Started -> "Installer opened"
+                                InstallResult.NeedsUnknownSourcesPermission -> "Allow installs from this app, then check again"
+                            }
                         }
+
+                        is UpdateCheckResult.NoInstallableAsset ->
+                            "Release ${result.latestVersion} has no APK asset"
+
+                        is UpdateCheckResult.UpToDate ->
+                            "Already on ${result.currentVersion}"
                     }
-
-                    is UpdateCheckResult.NoInstallableAsset ->
-                        "Release ${result.latestVersion} has no APK asset"
-
-                    is UpdateCheckResult.UpToDate ->
-                        "Already on ${result.currentVersion}"
+                }.onSuccess { updateMessage ->
+                    message = updateMessage
+                }.onFailure { error ->
+                    message = error.message ?: "Update check failed"
                 }
-            }.onSuccess { updateMessage ->
-                message = updateMessage
-            }.onFailure { error ->
-                message = error.message ?: "Update check failed"
+            } finally {
+                updateInProgress = false
             }
-            updateInProgress = false
+        }
+    }
+
+    private fun importSharedPacks(
+        automatic: Boolean,
+        passwordOverride: String? = null,
+        savePasswordOnSuccess: Boolean = false,
+    ) {
+        if (sharedPackImportInProgress) return
+        sharedPackImportInProgress = true
+
+        viewModelScope.launch {
+            try {
+                loadJob.join()
+                val password = withContext(Dispatchers.IO) {
+                    passwordOverride ?: sharedPackSecretStore.loadPassword()
+                }
+                if (password.isNullOrEmpty()) {
+                    sharedPackPasswordSaved = false
+                    if (!automatic) {
+                        message = "Save shared pack password first"
+                    }
+                    return@launch
+                }
+
+                val result = try {
+                    withContext(Dispatchers.IO) {
+                        sharedPackRepository.importBundled(
+                            password = password,
+                            commitOnErrors = !savePasswordOnSuccess,
+                        )
+                    }
+                } catch (error: Exception) {
+                    message = error.message ?: "Shared pack import failed"
+                    return@launch
+                }
+
+                if (savePasswordOnSuccess && result.errors.isNotEmpty()) {
+                    message = result.errors.first()
+                    return@launch
+                }
+
+                if (savePasswordOnSuccess) {
+                    withContext(Dispatchers.IO) {
+                        sharedPackSecretStore.savePassword(password)
+                    }
+                    sharedPackPasswordSaved = true
+                }
+
+                state = result.state
+                if (!automatic || result.changed) {
+                    message = if (savePasswordOnSuccess) {
+                        "Shared pack password saved. ${result.summary}"
+                    } else {
+                        result.summary
+                    }
+                }
+            } finally {
+                sharedPackImportInProgress = false
+            }
         }
     }
 
@@ -235,5 +405,39 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
 
     private companion object {
         const val THANK_YOU_PACK_ASSET = "quest-packs/thank-you-paruchan.json"
+    }
+}
+
+data class QuestPackDraft(
+    val packName: String = "Paruchan Quest Pack",
+    val title: String = "",
+    val flavourText: String = "",
+    val xpText: String = "50",
+    val category: String = "Paruchan",
+    val icon: String = "star",
+    val cadence: QuestCadence = QuestCadence.Once,
+    val goalTargetText: String = "1",
+    val goalUnit: String = "completion",
+    val timerMinutesText: String = "",
+    val quests: List<Quest> = emptyList(),
+) {
+    fun toQuest(): Quest? {
+        val xp = xpText.toIntOrNull()?.coerceAtLeast(0) ?: return null
+        val goalTarget = goalTargetText.toIntOrNull()?.coerceAtLeast(1) ?: return null
+        val timerMinutes = timerMinutesText.toIntOrNull()?.coerceIn(1, 24 * 60)
+        val cleanTitle = title.trim()
+        if (cleanTitle.isBlank()) return null
+        return Quest(
+            title = cleanTitle,
+            flavourText = flavourText.trim(),
+            xp = xp,
+            category = category.trim().ifBlank { "General" },
+            icon = icon.trim().ifBlank { "star" },
+            repeatable = cadence == QuestCadence.Repeatable,
+            cadence = cadence.wireName,
+            goalTarget = if (cadence == QuestCadence.Counter) 1 else goalTarget,
+            goalUnit = goalUnit.trim().ifBlank { if (cadence == QuestCadence.Counter) "unit" else "completion" },
+            timerMinutes = if (cadence == QuestCadence.Counter) null else timerMinutes,
+        )
     }
 }

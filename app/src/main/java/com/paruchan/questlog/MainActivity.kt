@@ -11,15 +11,13 @@ import com.paruchan.questlog.ui.QuestLogViewModel
 
 class MainActivity : ComponentActivity() {
     private val viewModel: QuestLogViewModel by viewModels()
-    private var pendingQuestPackJson: String? = null
 
     private val importQuestPack = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let { viewModel.importQuestPack(this, it) }
     }
 
     private val exportQuestPack = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
-        val json = pendingQuestPackJson
-        pendingQuestPackJson = null
+        val json = viewModel.consumePendingQuestPackExport()
         if (uri != null && json != null) {
             viewModel.exportQuestPack(this, uri, json)
         }
@@ -41,7 +39,7 @@ class MainActivity : ComponentActivity() {
                 onImportQuestPack = { importQuestPack.launch(arrayOf("application/json", "text/*")) },
                 onAddQuestPack = { json -> viewModel.addGeneratedQuestPack(json) },
                 onExportQuestPack = { json ->
-                    pendingQuestPackJson = json
+                    viewModel.prepareQuestPackExport(json)
                     exportQuestPack.launch("paruchan-quest-pack.json")
                 },
                 onShareQuestPack = { json -> viewModel.shareQuestPack(this, json) },
