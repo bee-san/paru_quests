@@ -79,6 +79,19 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun addGeneratedQuestPack(json: String) {
+        viewModelScope.launch {
+            runCatching {
+                repository.importQuestPack(json)
+            }.onSuccess { result ->
+                state = result.state
+                message = "Added to quest log: ${result.summary}"
+            }.onFailure { error ->
+                message = error.message ?: "Quest pack add failed"
+            }
+        }
+    }
+
     fun importBundledThankYouPack(context: Context) {
         viewModelScope.launch {
             runCatching {

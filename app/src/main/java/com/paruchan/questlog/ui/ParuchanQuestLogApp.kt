@@ -130,6 +130,7 @@ private val ParuchanScheme = lightColorScheme(
 fun ParuchanQuestLogApp(
     viewModel: QuestLogViewModel,
     onImportQuestPack: () -> Unit,
+    onAddQuestPack: (String) -> Unit,
     onExportQuestPack: (String) -> Unit,
     onShareQuestPack: (String) -> Unit,
     onExportBackup: () -> Unit,
@@ -247,6 +248,7 @@ fun ParuchanQuestLogApp(
                             Screen.Files -> ImportExportScreen(
                                 onImportQuestPack = onImportQuestPack,
                                 onImportBundledPack = { viewModel.importBundledThankYouPack(context) },
+                                onAddQuestPack = onAddQuestPack,
                                 onExportQuestPack = onExportQuestPack,
                                 onShareQuestPack = onShareQuestPack,
                                 onExportBackup = onExportBackup,
@@ -907,6 +909,7 @@ private fun HistoryScreen(
 private fun ImportExportScreen(
     onImportQuestPack: () -> Unit,
     onImportBundledPack: () -> Unit,
+    onAddQuestPack: (String) -> Unit,
     onExportQuestPack: (String) -> Unit,
     onShareQuestPack: (String) -> Unit,
     onExportBackup: () -> Unit,
@@ -923,6 +926,7 @@ private fun ImportExportScreen(
         }
         item {
             QuestPackMaker(
+                onAddQuestPack = onAddQuestPack,
                 onExportQuestPack = onExportQuestPack,
                 onShareQuestPack = onShareQuestPack,
             )
@@ -965,6 +969,7 @@ private fun ImportExportScreen(
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun QuestPackMaker(
+    onAddQuestPack: (String) -> Unit,
     onExportQuestPack: (String) -> Unit,
     onShareQuestPack: (String) -> Unit,
 ) {
@@ -1110,6 +1115,19 @@ private fun QuestPackMaker(
                         )
                     }
                 }
+            }
+
+            Button(
+                onClick = { onAddQuestPack(packJson()) },
+                enabled = packQuests.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
+                border = BorderStroke(1.dp, Gold),
+            ) {
+                Icon(Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Add to Quest Log", maxLines = 1)
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

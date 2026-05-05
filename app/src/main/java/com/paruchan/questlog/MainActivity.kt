@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
             ParuchanQuestLogApp(
                 viewModel = viewModel,
                 onImportQuestPack = { importQuestPack.launch(arrayOf("application/json", "text/*")) },
+                onAddQuestPack = { json -> viewModel.addGeneratedQuestPack(json) },
                 onExportQuestPack = { json ->
                     pendingQuestPackJson = json
                     exportQuestPack.launch("paruchan-quest-pack.json")
