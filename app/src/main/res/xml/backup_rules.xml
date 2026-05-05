@@ -1,0 +1,3 @@
+<full-backup-content>
+    <include domain="file" path="questlog.json" />
+</full-backup-content>

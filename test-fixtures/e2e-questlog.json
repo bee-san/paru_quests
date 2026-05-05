@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "quests": [
+    {
+      "id": "spot-paruchans",
+      "title": "Spot 10 paruchans",
+      "flavourText": "Find tiny friends in the wild.",
+      "xp": 500,
+      "category": "Adventure",
+      "icon": "paruchan",
+      "repeatable": false,
+      "cadence": "once",
+      "goalTarget": 10,
+      "goalUnit": "paruchan",
+      "createdAt": "2026-05-05T12:00:00Z",
+      "archived": false
+    },
+    {
+      "id": "read-lotr",
+      "title": "Read 100 pages of LOTR",
+      "flavourText": "Journey through Middle-earth.",
+      "xp": 200,
+      "category": "Reading",
+      "icon": "book",
+      "repeatable": false,
+      "cadence": "once",
+      "goalTarget": 100,
+      "goalUnit": "page",
+      "createdAt": "2026-05-05T12:05:00Z",
+      "archived": false
+    },
+    {
+      "id": "backup-dotfiles",
+      "title": "Backup your dotfiles",
+      "flavourText": "Protect your digital kingdom.",
+      "xp": 200,
+      "category": "Tech",
+      "icon": "terminal",
+      "repeatable": false,
+      "cadence": "once",
+      "timerMinutes": 25,
+      "createdAt": "2026-05-05T12:10:00Z",
+      "archived": false
+    },
+    {
+      "id": "daily-tea",
+      "title": "Brew celebratory tea",
+      "flavourText": "A daily tiny victory.",
+      "xp": 50,
+      "category": "Paruchan",
+      "icon": "star",
+      "repeatable": false,
+      "cadence": "daily",
+      "goalTarget": 1,
+      "goalUnit": "cup",
+      "timerMinutes": 5,
+      "createdAt": "2026-05-05T12:15:00Z",
+      "archived": false
+    }
+  ],
+  "completions": [
+    {
+      "id": "completion-read-lotr",
+      "questId": "read-lotr",
+      "completedAt": "2026-05-05T12:30:00Z",
+      "xpAwarded": 200,
+      "progressAmount": 100,
+      "note": "Runtime seeded test completion"
+    }
+  ],
+  "levels": [
+    {
+      "level": 1,
+      "xpRequired": 0,
+      "title": "Pocket Questling",
+      "unlocks": [
+        "Quest log awakened"
+      ]
+    },
+    {
+      "level": 2,
+      "xpRequired": 150,
+      "title": "Snack Squire",
+      "unlocks": [
+        "Tiny treats count double emotionally"
+      ]
+    },
+    {
+      "level": 3,
+      "xpRequired": 450,
+      "title": "Errand Enchanter",
+      "unlocks": [
+        "One ceremonial side quest slot"
+      ]
+    }
+  ],
+  "exportedAt": "2026-05-05T13:00:00Z"
+}
