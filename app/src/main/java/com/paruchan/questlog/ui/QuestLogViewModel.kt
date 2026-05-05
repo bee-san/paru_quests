@@ -2,6 +2,7 @@ package com.paruchan.questlog.ui
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -17,6 +18,7 @@ import com.paruchan.questlog.data.QuestLogRepository
 import com.paruchan.questlog.update.GitHubReleaseUpdater
 import com.paruchan.questlog.update.InstallResult
 import com.paruchan.questlog.update.UpdateCheckResult
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -86,6 +88,45 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
                 message = "Backup exported"
             }.onFailure { error ->
                 message = error.message ?: "Backup export failed"
+            }
+        }
+    }
+
+    fun exportQuestPack(context: Context, uri: Uri, json: String) {
+        viewModelScope.launch {
+            runCatching {
+                writeText(context, uri, json)
+            }.onSuccess {
+                message = "Quest pack exported"
+            }.onFailure { error ->
+                message = error.message ?: "Quest pack export failed"
+            }
+        }
+    }
+
+    fun shareQuestPack(context: Context, json: String) {
+        viewModelScope.launch {
+            runCatching {
+                val file = withContext(Dispatchers.IO) {
+                    val dir = File(context.cacheDir, "quest-packs")
+                    dir.mkdirs()
+                    File(dir, "paruchan-quest-pack.json").also { it.writeText(json) }
+                }
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file,
+                )
+                val send = Intent(Intent.ACTION_SEND)
+                    .setType("application/json")
+                    .putExtra(Intent.EXTRA_STREAM, uri)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                context.startActivity(Intent.createChooser(send, "Share quest pack"))
+                "Share sheet opened"
+            }.onSuccess { shareMessage ->
+                message = shareMessage
+            }.onFailure { error ->
+                message = error.message ?: "Quest pack share failed"
             }
         }
     }

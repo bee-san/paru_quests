@@ -22,6 +22,8 @@ Quest packs can include one-off quests, repeatable quests, dailies, multi-step g
 
 Multi-step goals award XP when the target is reached. Daily goals reset on the next local day.
 
+The Files screen includes a quest-pack maker. Add quests to a temporary pack, then export the JSON through Android's file picker or share it through the Android share sheet.
+
 ## Build
 
 ```bash

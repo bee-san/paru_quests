@@ -25,7 +25,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Assignment
+import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.History
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Replay
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.SystemUpdateAlt
 import androidx.compose.material.icons.outlined.Timer
@@ -52,6 +55,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.SnackbarDuration
@@ -65,6 +69,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -82,6 +87,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.paruchan.questlog.R
@@ -90,6 +97,7 @@ import com.paruchan.questlog.core.Completion
 import com.paruchan.questlog.core.LevelProgress
 import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestCadence
+import com.paruchan.questlog.core.QuestPackExporter
 import com.paruchan.questlog.core.QuestProgress
 import kotlinx.coroutines.delay
 
@@ -120,6 +128,8 @@ private val ParuchanScheme = lightColorScheme(
 fun ParuchanQuestLogApp(
     viewModel: QuestLogViewModel,
     onImportQuestPack: () -> Unit,
+    onExportQuestPack: (String) -> Unit,
+    onShareQuestPack: (String) -> Unit,
     onExportBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
 ) {
@@ -235,6 +245,8 @@ fun ParuchanQuestLogApp(
 
                             Screen.Files -> ImportExportScreen(
                                 onImportQuestPack = onImportQuestPack,
+                                onExportQuestPack = onExportQuestPack,
+                                onShareQuestPack = onShareQuestPack,
                                 onExportBackup = onExportBackup,
                                 onRestoreBackup = onRestoreBackup,
                             )
@@ -634,6 +646,14 @@ private fun compactMetaText(quest: Quest, progress: QuestProgress): String =
         add(quest.category.ifBlank { "General" })
     }.joinToString(" / ")
 
+private fun compactPackQuestText(quest: Quest): String =
+    buildList {
+        add(QuestCadence.from(quest).label)
+        if (quest.goalTarget > 1) add("${quest.goalTarget} ${quest.goalUnit}")
+        quest.timerMinutes?.let { add("${it}m timer") }
+        add("${quest.xp} XP")
+    }.joinToString(" / ")
+
 @Composable
 private fun MetaChip(text: String) {
     Box(
@@ -802,6 +822,8 @@ private fun HistoryScreen(
 @Composable
 private fun ImportExportScreen(
     onImportQuestPack: () -> Unit,
+    onExportQuestPack: (String) -> Unit,
+    onShareQuestPack: (String) -> Unit,
     onExportBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
 ) {
@@ -812,6 +834,12 @@ private fun ImportExportScreen(
                 text = "Move quest packs and backups through Android's file picker.",
                 color = MutedInk,
                 style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        item {
+            QuestPackMaker(
+                onExportQuestPack = onExportQuestPack,
+                onShareQuestPack = onShareQuestPack,
             )
         }
         item {
@@ -838,6 +866,251 @@ private fun ImportExportScreen(
                 onClick = onRestoreBackup,
             )
         }
+    }
+}
+
+@Composable
+private fun QuestPackMaker(
+    onExportQuestPack: (String) -> Unit,
+    onShareQuestPack: (String) -> Unit,
+) {
+    val exporter = remember { QuestPackExporter() }
+    val packQuests = remember { mutableStateListOf<Quest>() }
+    var packName by rememberSaveable { mutableStateOf("Paruchan Quest Pack") }
+    var title by rememberSaveable { mutableStateOf("") }
+    var flavourText by rememberSaveable { mutableStateOf("") }
+    var xpText by rememberSaveable { mutableStateOf("50") }
+    var category by rememberSaveable { mutableStateOf("Paruchan") }
+    var icon by rememberSaveable { mutableStateOf("star") }
+    var cadence by rememberSaveable { mutableStateOf(QuestCadence.Once) }
+    var goalTargetText by rememberSaveable { mutableStateOf("1") }
+    var goalUnit by rememberSaveable { mutableStateOf("completion") }
+    var timerMinutesText by rememberSaveable { mutableStateOf("") }
+
+    fun draftQuest(): Quest? {
+        val xp = xpText.toIntOrNull()?.coerceAtLeast(0) ?: return null
+        val goalTarget = goalTargetText.toIntOrNull()?.coerceAtLeast(1) ?: return null
+        val timerMinutes = timerMinutesText.toIntOrNull()?.coerceIn(1, 24 * 60)
+        val cleanTitle = title.trim()
+        if (cleanTitle.isBlank()) return null
+        return Quest(
+            title = cleanTitle,
+            flavourText = flavourText.trim(),
+            xp = xp,
+            category = category.trim().ifBlank { "General" },
+            icon = icon.trim().ifBlank { "star" },
+            repeatable = cadence == QuestCadence.Repeatable,
+            cadence = cadence.wireName,
+            goalTarget = goalTarget,
+            goalUnit = goalUnit.trim().ifBlank { "completion" },
+            timerMinutes = timerMinutes,
+        )
+    }
+
+    fun packJson(): String = exporter.encodePack(packName, packQuests.toList())
+
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.42f)),
+        colors = CardDefaults.cardColors(containerColor = Parchment.copy(alpha = 0.98f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SectionHeader("Quest Pack Maker")
+            CompactTextField(
+                value = packName,
+                onValueChange = { packName = it },
+                label = "Pack name",
+            )
+            CompactTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = "Quest title",
+            )
+            CompactTextField(
+                value = flavourText,
+                onValueChange = { flavourText = it },
+                label = "Flavour text",
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                CompactTextField(
+                    value = xpText,
+                    onValueChange = { xpText = it.filter(Char::isDigit).ifBlank { "0" } },
+                    label = "XP",
+                    numeric = true,
+                    modifier = Modifier.weight(0.7f),
+                )
+                CompactTextField(
+                    value = category,
+                    onValueChange = { category = it },
+                    label = "Category",
+                    modifier = Modifier.weight(1.3f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                QuestCadence.entries.forEach { item ->
+                    FilterPill(
+                        text = item.label,
+                        selected = cadence == item,
+                        onClick = { cadence = item },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                CompactTextField(
+                    value = goalTargetText,
+                    onValueChange = { goalTargetText = it.filter(Char::isDigit).ifBlank { "1" } },
+                    label = "Goal target",
+                    numeric = true,
+                    modifier = Modifier.weight(1f),
+                )
+                CompactTextField(
+                    value = goalUnit,
+                    onValueChange = { goalUnit = it },
+                    label = "Unit",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                CompactTextField(
+                    value = timerMinutesText,
+                    onValueChange = { timerMinutesText = it.filter(Char::isDigit).take(4) },
+                    label = "Timer minutes",
+                    numeric = true,
+                    modifier = Modifier.weight(1f),
+                )
+                CompactTextField(
+                    value = icon,
+                    onValueChange = { icon = it },
+                    label = "Icon",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Button(
+                onClick = {
+                    draftQuest()?.let { quest ->
+                        packQuests += quest
+                        title = ""
+                        flavourText = ""
+                        goalTargetText = "1"
+                        goalUnit = "completion"
+                        timerMinutesText = ""
+                    }
+                },
+                enabled = draftQuest() != null,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
+                border = BorderStroke(1.dp, Gold),
+            ) {
+                Icon(Icons.Outlined.AddCircle, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                DisplayText("Add quest to pack", 20.sp, Gold, FontWeight.Bold)
+            }
+
+            if (packQuests.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${packQuests.size} quest${if (packQuests.size == 1) "" else "s"} ready", color = MutedInk)
+                    packQuests.forEachIndexed { index, quest ->
+                        DraftQuestRow(
+                            quest = quest,
+                            onRemove = { packQuests.removeAt(index) },
+                        )
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = { onExportQuestPack(packJson()) },
+                    enabled = packQuests.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
+                    border = BorderStroke(1.dp, Gold),
+                ) {
+                    Icon(Icons.Outlined.FileDownload, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Export")
+                }
+                Button(
+                    onClick = { onShareQuestPack(packJson()) },
+                    enabled = packQuests.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = GoldDeep, contentColor = Color.White),
+                ) {
+                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Share")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    numeric: Boolean = false,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = if (numeric) KeyboardOptions(keyboardType = KeyboardType.Number) else KeyboardOptions.Default,
+        shape = RoundedCornerShape(8.dp),
+    )
+}
+
+@Composable
+private fun DraftQuestRow(
+    quest: Quest,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Lilac.copy(alpha = 0.36f))
+            .border(BorderStroke(1.dp, Gold.copy(alpha = 0.28f)), RoundedCornerShape(8.dp))
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircleQuestIcon(modifier = Modifier.size(44.dp), icon = quest.icon)
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            DisplayText(quest.title, 18.sp, Ink, FontWeight.Bold)
+            Text(
+                compactPackQuestText(quest),
+                color = MutedInk,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            Icons.Outlined.Delete,
+            contentDescription = "Remove quest",
+            tint = Plum,
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onRemove)
+                .padding(6.dp),
+        )
     }
 }
 

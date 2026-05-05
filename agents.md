@@ -37,6 +37,8 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 ## Import, Export, Restore
 
 - Quest-pack import uses Android's system file picker and accepts JSON arrays or objects with a `quests` array.
+- Quest-pack creation is available in the Files screen. It builds shareable JSON objects with `kind: "paruchan.quest-pack"` and a `quests` array.
+- Quest-pack export uses `ACTION_CREATE_DOCUMENT`; quest-pack share writes a temporary JSON file under `cacheDir/quest-packs` and sends it through Android's share sheet with the app `FileProvider`.
 - Import merges into existing quests.
 - If an imported quest has `id`, update by `id`.
 - If no `id` is present, derive a stable ID from normalized `title/category/xp/flavourText/repeatable` to avoid duplicates on re-import.
