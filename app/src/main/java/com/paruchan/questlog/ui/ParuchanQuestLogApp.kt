@@ -351,7 +351,6 @@ private fun CompletionCelebrationOverlay(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .clickable(onClick = onDismiss)
             .padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
