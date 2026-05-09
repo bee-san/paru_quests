@@ -71,16 +71,12 @@ class SharedPackImporter(
             }
         }
 
-        val latestAssetsByPackId = decryptedAssets
-            .groupBy { it.packId }
-            .mapValues { (_, assetsForPack) ->
-                assetsForPack.maxWithOrNull(decryptedSharedPackAssetComparator)!!
-            }
+        val highestPackVersion = decryptedAssets.maxWithOrNull(decryptedSharedPackAssetComparator)?.packVersion
+        val currentGenerationAssets = decryptedAssets.filter { asset ->
+            highestPackVersion != null && comparePackVersions(asset.packVersion, highestPackVersion) == 0
+        }
 
-        decryptedAssets.sortedBy { it.assetName }.forEach { asset ->
-            val latestAsset = latestAssetsByPackId[asset.packId]
-            if (latestAsset != asset) return@forEach
-
+        currentGenerationAssets.sortedBy { it.assetName }.forEach { asset ->
             if (asset.marker in importedMarkers || asset.marker in newMarkers) {
                 incomingQuestIds += questPackImporter.questIdsInQuestPack(asset.questPackJson)
                 unchangedPacks++
@@ -105,7 +101,7 @@ class SharedPackImporter(
             appliedPacks++
         }
 
-        if (appliedPacks > 0 && incomingQuestIds.isNotEmpty() && errors.isEmpty()) {
+        if (currentGenerationAssets.isNotEmpty() && incomingQuestIds.isNotEmpty() && errors.isEmpty()) {
             val closeResult = questPackImporter.closeQuestsOutside(workingState, incomingQuestIds)
             workingState = closeResult.state
             closed = closeResult.closed

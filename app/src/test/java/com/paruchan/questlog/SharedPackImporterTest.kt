@@ -156,7 +156,7 @@ class SharedPackImporterTest {
     }
 
     @Test
-    fun `shared pack import keeps unchanged bundled packs open when another pack updates`() {
+    fun `same-generation shared pack import keeps unchanged bundled packs open when another pack updates`() {
         val firstAsset = EncryptedSharedPackAsset(
             name = "01-first.encrypted.json",
             json = encryptedPack(
@@ -176,7 +176,6 @@ class SharedPackImporterTest {
             json = encryptedPack(
                 plaintext = """{"quests":[{"id":"second","title":"Second quest updated","xp":25}]}""",
                 packId = "second-pack",
-                packVersion = "2",
             ),
         )
         val importer = SharedPackImporter()
@@ -203,7 +202,100 @@ class SharedPackImporterTest {
     }
 
     @Test
-    fun `newer shared pack version replaces quests from older bundled versions`() {
+    fun `highest shared pack generation replaces quests from older bundled pack ids`() {
+        val paruchanAsset = EncryptedSharedPackAsset(
+            name = "01-paruchan.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"paruchan-old","title":"Paruchan old quest","xp":10}]}""",
+                packId = "paruchan-quest-pack",
+                packVersion = "2",
+            ),
+        )
+        val dustBanditAsset = EncryptedSharedPackAsset(
+            name = "02-dust-bandits.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"dust-bandit","title":"Dust bandit quest","xp":25}]}""",
+                packId = "bedroom-dust-bandits",
+                packVersion = "3",
+            ),
+        )
+
+        val result = SharedPackImporter().mergeEncryptedPacks(
+            state = QuestLogState(
+                quests = listOf(
+                    Quest(id = "paruchan-old", title = "Paruchan old quest", xp = 10),
+                ),
+            ),
+            assets = listOf(paruchanAsset, dustBanditAsset),
+            password = PASSWORD,
+            importedMarkers = emptySet(),
+        )
+
+        assertEquals(1, result.imported)
+        assertEquals(1, result.closed)
+        assertTrue(result.state.quests.first { it.id == "paruchan-old" }.archived)
+        assertFalse(result.state.quests.first { it.id == "dust-bandit" }.archived)
+    }
+
+    @Test
+    fun `higher shared pack generation archives older imported generations without changing completions`() {
+        val firstAsset = EncryptedSharedPackAsset(
+            name = "01-paruchan.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"paruchan-old","title":"Paruchan old quest","xp":10}]}""",
+                packId = "paruchan-quest-pack",
+                packVersion = "2",
+            ),
+        )
+        val secondAsset = EncryptedSharedPackAsset(
+            name = "02-thanks.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"thanks-old","title":"Thanks old quest","xp":20}]}""",
+                packId = "thank-you-paruchan",
+                packVersion = "2",
+            ),
+        )
+        val thirdAsset = EncryptedSharedPackAsset(
+            name = "03-dust-bandits.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"dust-bandit","title":"Dust bandit quest","xp":25}]}""",
+                packId = "bedroom-dust-bandits",
+                packVersion = "3",
+            ),
+        )
+        val importer = SharedPackImporter()
+        val firstImport = importer.mergeEncryptedPacks(
+            state = QuestLogState(),
+            assets = listOf(firstAsset, secondAsset),
+            password = PASSWORD,
+            importedMarkers = emptySet(),
+        )
+        val completions = listOf(
+            Completion(
+                id = "completion-1",
+                questId = "paruchan-old",
+                completedAt = "2026-05-05T12:00:00Z",
+                xpAwarded = 10,
+            )
+        )
+
+        val secondImport = importer.mergeEncryptedPacks(
+            state = firstImport.state.copy(completions = completions),
+            assets = listOf(firstAsset, secondAsset, thirdAsset),
+            password = PASSWORD,
+            importedMarkers = firstImport.newMarkers,
+        )
+
+        assertEquals(1, secondImport.imported)
+        assertEquals(2, secondImport.closed)
+        assertTrue(secondImport.state.quests.first { it.id == "paruchan-old" }.archived)
+        assertTrue(secondImport.state.quests.first { it.id == "thanks-old" }.archived)
+        assertFalse(secondImport.state.quests.first { it.id == "dust-bandit" }.archived)
+        assertEquals(completions, secondImport.state.completions)
+    }
+
+    @Test
+    fun `newer shared pack generation replaces quests from older bundled versions`() {
         val firstAsset = EncryptedSharedPackAsset(
             name = "01-shared.encrypted.json",
             json = encryptedPack(
