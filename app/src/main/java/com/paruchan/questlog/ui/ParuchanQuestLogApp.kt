@@ -34,12 +34,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Assignment
 import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
@@ -246,22 +244,12 @@ fun ParuchanQuestLogApp(
                             Screen.Home -> DashboardScreen(
                                 progress = viewModel.progress,
                                 quests = viewModel.state.quests,
-                                completionCount = viewModel.state.completions.size,
                                 availableQuests = viewModel.state.quests.filter { viewModel.canComplete(it) },
                                 canComplete = viewModel::canComplete,
                                 progressFor = viewModel::progressFor,
                                 onComplete = { questId, amount -> viewModel.completeQuest(questId, amount) },
-                                onShowQuests = { screen = Screen.Quests },
                                 onShowFiles = { screen = Screen.Files },
                                 onShowSettings = { screen = Screen.Settings },
-                            )
-
-                            Screen.Quests -> QuestsScreen(
-                                quests = viewModel.state.quests,
-                                completedQuestIds = viewModel.completedQuestIds,
-                                canComplete = viewModel::canComplete,
-                                progressFor = viewModel::progressFor,
-                                onComplete = { questId, amount -> viewModel.completeQuest(questId, amount) },
                             )
 
                             Screen.History -> HistoryScreen(
@@ -498,12 +486,10 @@ private fun ParchmentPanel(
 private fun DashboardScreen(
     progress: LevelProgress,
     quests: List<Quest>,
-    completionCount: Int,
     availableQuests: List<Quest>,
     canComplete: (Quest) -> Boolean,
     progressFor: (Quest) -> QuestProgress,
     onComplete: (String, Int) -> Unit,
-    onShowQuests: () -> Unit,
     onShowFiles: () -> Unit,
     onShowSettings: () -> Unit,
 ) {
@@ -550,7 +536,7 @@ private fun DashboardScreen(
         }
 
         item {
-            SectionHeader("Today's Quests", action = if (quests.isNotEmpty()) "View all" else null, onAction = onShowQuests)
+            SectionHeader("Quests")
         }
 
         if (availableQuests.isEmpty()) {
@@ -564,13 +550,12 @@ private fun DashboardScreen(
                 )
             }
         } else {
-            items(spotlightQuests.take(3), key = { it.id }) { quest ->
+            items(spotlightQuests, key = { it.id }) { quest ->
                 QuestListCard(
                     quest = quest,
                     progress = progressFor(quest),
                     completed = false,
                     enabled = canComplete(quest),
-                    compact = true,
                     onComplete = { amount -> onComplete(quest.id, amount) },
                 )
             }
@@ -579,7 +564,6 @@ private fun DashboardScreen(
         item {
             SectionHeader("Quick Session")
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                QuickAction("Quests", Icons.AutoMirrored.Outlined.Assignment, onShowQuests, Modifier.weight(1f))
                 QuickAction("Files", Icons.Outlined.ImportExport, onShowFiles, Modifier.weight(1f))
                 QuickAction("Update", Icons.Outlined.SystemUpdateAlt, onShowSettings, Modifier.weight(1f))
             }
@@ -674,85 +658,11 @@ private fun StatCard(title: String, value: String, subtitle: String, modifier: M
 }
 
 @Composable
-@OptIn(ExperimentalLayoutApi::class)
-private fun QuestsScreen(
-    quests: List<Quest>,
-    completedQuestIds: Set<String>,
-    canComplete: (Quest) -> Boolean,
-    progressFor: (Quest) -> QuestProgress,
-    onComplete: (String, Int) -> Unit,
-) {
-    var tab by rememberSaveable { mutableStateOf(QuestTab.Active) }
-    var category by rememberSaveable { mutableStateOf("All") }
-    val categories = listOf("All") + quests.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
-    val filtered = quests.filter { quest ->
-        val tabMatch = when (tab) {
-            QuestTab.Active -> canComplete(quest)
-            QuestTab.Dailies -> QuestCadence.from(quest) == QuestCadence.Daily
-            QuestTab.Goals -> QuestGoalType.from(quest) != QuestGoalType.Completion || quest.goalTarget > 1
-            QuestTab.Counters -> QuestGoalType.from(quest) == QuestGoalType.Counter
-            QuestTab.Timed -> QuestGoalType.from(quest) == QuestGoalType.Timer || quest.timerMinutes != null
-            QuestTab.Completed -> quest.id in completedQuestIds && !quest.repeatable
-            QuestTab.Repeatable -> quest.repeatable
-        }
-        val categoryMatch = category == "All" || quest.category == category
-        tabMatch && categoryMatch
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            QuestTab.entries.forEach { item ->
-                FilterPill(
-                    text = item.label,
-                    selected = tab == item,
-                    onClick = { tab = item },
-                )
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            categories.forEach { item ->
-                FilterPill(text = item, selected = category == item, onClick = { category = item })
-            }
-        }
-        OrnamentDivider(Modifier.padding(vertical = 14.dp))
-
-        if (filtered.isEmpty()) {
-            EmptyStateCard("No quests in this view.")
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 18.dp),
-            ) {
-                items(filtered, key = { it.id }) { quest ->
-                    QuestListCard(
-                        quest = quest,
-                        progress = progressFor(quest),
-                        completed = quest.id in completedQuestIds,
-                        enabled = canComplete(quest),
-                        onComplete = { amount -> onComplete(quest.id, amount) },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun QuestListCard(
     quest: Quest,
     progress: QuestProgress,
     completed: Boolean,
     enabled: Boolean,
-    compact: Boolean = false,
     onComplete: (Int) -> Unit,
 ) {
     val goalType = progress.goalType
@@ -769,12 +679,12 @@ private fun QuestListCard(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(verticalAlignment = Alignment.Top) {
-                CircleQuestIcon(modifier = Modifier.size(if (compact) 54.dp else 70.dp), icon = quest.icon)
+                CircleQuestIcon(modifier = Modifier.size(70.dp), icon = quest.icon)
                 Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     DisplayText(
                         quest.title,
-                        if (compact) 21.sp else 24.sp,
+                        24.sp,
                         Ink,
                         FontWeight.Bold,
                         maxLines = 3,
@@ -784,23 +694,16 @@ private fun QuestListCard(
                             quest.flavourText,
                             color = MutedInk,
                             style = MaterialTheme.typography.bodyMedium,
-                            maxLines = if (compact) 2 else 4,
+                            maxLines = 4,
                         )
                     }
-                    if (!compact) {
-                        Spacer(Modifier.height(6.dp))
-                        QuestMetaRow(quest = quest, progress = progress)
-                        if (progress.hasGoal) {
-                            Spacer(Modifier.height(8.dp))
-                            GoalProgressBar(progress = progress)
-                        }
-                        quest.timerMinutes?.takeIf { goalType != QuestGoalType.Timer }?.let { minutes ->
-                            Spacer(Modifier.height(8.dp))
-                            QuestTimer(questId = quest.id, minutes = minutes)
-                        }
-                    } else {
-                        Spacer(Modifier.height(5.dp))
-                        QuestMetaRow(quest = quest, progress = progress, compact = true)
+                    if (progress.hasGoal) {
+                        Spacer(Modifier.height(8.dp))
+                        GoalProgressBar(progress = progress)
+                    }
+                    quest.timerMinutes?.takeIf { goalType != QuestGoalType.Timer }?.let { minutes ->
+                        Spacer(Modifier.height(8.dp))
+                        QuestTimer(questId = quest.id, minutes = minutes)
                     }
                 }
             }
@@ -817,11 +720,11 @@ private fun QuestListCard(
                         FontWeight.SemiBold,
                         maxLines = 2,
                     )
-                    if (progress.hasGoal && !compact) {
+                    if (progress.hasGoal) {
                         Text("XP awarded when the goal completes", color = MutedInk, style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                if (progress.hasGoal && !compact) {
+                if (progress.hasGoal) {
                     Text("on goal", color = MutedInk, style = MaterialTheme.typography.bodySmall)
                 }
                 if (goalType == QuestGoalType.Counter) {
@@ -844,49 +747,6 @@ private fun QuestListCard(
     }
 }
 
-@Composable
-private fun QuestMetaRow(
-    quest: Quest,
-    progress: QuestProgress,
-    compact: Boolean = false,
-) {
-    if (compact) {
-        Text(
-            compactMetaText(quest, progress),
-            color = Plum,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 3,
-        )
-        return
-    }
-
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        item { MetaChip(progress.cadence.label) }
-        if (progress.goalType != QuestGoalType.Completion) {
-            item { MetaChip(progress.goalType.label) }
-        }
-        item { MetaChip(quest.category.ifBlank { "General" }) }
-        if (progress.hasGoal) {
-            item { MetaChip(progressSummary(progress)) }
-        }
-        quest.timerMinutes?.takeIf { progress.goalType != QuestGoalType.Timer }?.let { minutes ->
-            item { MetaChip("${minutes}m timer") }
-        }
-        if (progress.completedCycles > 0 && progress.cadence == QuestCadence.Repeatable && !compact) {
-            item { MetaChip("${progress.completedCycles} cycles done") }
-        }
-    }
-}
-
-private fun compactMetaText(quest: Quest, progress: QuestProgress): String =
-    buildList {
-        add(progress.cadence.label)
-        if (progress.goalType != QuestGoalType.Completion) add(progress.goalType.label)
-        if (progress.hasGoal) add(progressSummary(progress))
-        quest.timerMinutes?.takeIf { progress.goalType != QuestGoalType.Timer }?.let { add("${it}m timer") }
-        add(quest.category.ifBlank { "General" })
-    }.joinToString(" / ")
-
 private fun compactPackQuestText(quest: Quest): String =
     buildList {
         val cadence = QuestCadence.from(quest)
@@ -899,22 +759,6 @@ private fun compactPackQuestText(quest: Quest): String =
         quest.timerMinutes?.takeIf { goalType != QuestGoalType.Timer }?.let { add("${it}m timer") }
         add("${quest.xp} XP")
     }.joinToString(" / ")
-
-@Composable
-private fun MetaChip(text: String) {
-    Box(
-        modifier = Modifier
-            .heightIn(min = 28.dp)
-            .widthIn(min = 32.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Lilac.copy(alpha = 0.48f))
-            .border(BorderStroke(1.dp, Gold.copy(alpha = 0.25f)), RoundedCornerShape(8.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text, color = Plum, style = MaterialTheme.typography.labelMedium)
-    }
-}
 
 @Composable
 private fun GoalProgressBar(progress: QuestProgress) {
@@ -1242,11 +1086,6 @@ private fun QuestPackMaker(
                 onValueChange = { onDraftChange(draft.copy(xpText = it.filter(Char::isDigit).ifBlank { "0" })) },
                 label = "XP",
                 numeric = true,
-            )
-            CompactTextField(
-                value = draft.category,
-                onValueChange = { onDraftChange(draft.copy(category = it)) },
-                label = "Category",
             )
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1915,23 +1754,12 @@ private fun normalizedUnitLabel(unit: String, goalType: QuestGoalType, amount: I
 private fun unitLabel(unit: String, amount: Int): String =
     if (amount == 1 || unit.endsWith("s", ignoreCase = true)) unit else "${unit}s"
 
-private enum class QuestTab(val label: String) {
-    Active("Active"),
-    Dailies("Dailies"),
-    Goals("Goals"),
-    Counters("Counters"),
-    Timed("Timed"),
-    Repeatable("Repeat"),
-    Completed("Completed"),
-}
-
 private enum class Screen(
     val label: String,
     val title: String,
     val icon: ImageVector,
 ) {
     Home("Home", "Paruchan", Icons.Outlined.Home),
-    Quests("Quests", "Quests", Icons.AutoMirrored.Outlined.Assignment),
     History("Log", "Quest Log", Icons.Outlined.History),
     Files("Files", "Library", Icons.Outlined.ImportExport),
     Settings("Prefs", "Settings", Icons.Outlined.Settings),
