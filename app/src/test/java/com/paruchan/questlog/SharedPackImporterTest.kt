@@ -203,6 +203,45 @@ class SharedPackImporterTest {
     }
 
     @Test
+    fun `newer shared pack version replaces quests from older bundled versions`() {
+        val firstAsset = EncryptedSharedPackAsset(
+            name = "01-shared.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"old","title":"Old quest","xp":10}]}""",
+                packId = "shared-pack",
+                packVersion = "1",
+            ),
+        )
+        val secondAsset = EncryptedSharedPackAsset(
+            name = "02-shared.encrypted.json",
+            json = encryptedPack(
+                plaintext = """{"quests":[{"id":"new","title":"New quest","xp":25}]}""",
+                packId = "shared-pack",
+                packVersion = "2",
+            ),
+        )
+        val importer = SharedPackImporter()
+        val firstImport = importer.mergeEncryptedPacks(
+            state = QuestLogState(),
+            assets = listOf(firstAsset),
+            password = PASSWORD,
+            importedMarkers = emptySet(),
+        )
+
+        val secondImport = importer.mergeEncryptedPacks(
+            state = firstImport.state,
+            assets = listOf(firstAsset, secondAsset),
+            password = PASSWORD,
+            importedMarkers = firstImport.newMarkers,
+        )
+
+        assertEquals(1, secondImport.imported)
+        assertEquals(1, secondImport.closed)
+        assertTrue(secondImport.state.quests.first { it.id == "old" }.archived)
+        assertFalse(secondImport.state.quests.first { it.id == "new" }.archived)
+    }
+
+    @Test
     fun `bad shared pack does not block later valid packs`() {
         val badAsset = EncryptedSharedPackAsset(
             name = "01-bad.encrypted.json",

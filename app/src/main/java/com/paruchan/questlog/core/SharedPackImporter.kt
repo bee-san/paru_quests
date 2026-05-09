@@ -44,6 +44,7 @@ class SharedPackImporter(
         importedMarkers: Set<String>,
     ): SharedPackMergeResult {
         var workingState = state
+        val decryptedAssets = mutableListOf<DecryptedSharedPackAsset>()
         val newMarkers = mutableSetOf<String>()
         val errors = mutableListOf<String>()
         var appliedPacks = 0
@@ -57,33 +58,51 @@ class SharedPackImporter(
         assets.sortedBy { it.name }.forEach { asset ->
             runCatching {
                 val decrypted = EncryptedQuestPackCodec.decrypt(asset.json, password)
-                val marker = decrypted.importMarker()
-                if (marker in importedMarkers || marker in newMarkers) {
-                    incomingQuestIds += questPackImporter.questIdsInQuestPack(decrypted.questPackJson)
-                    unchangedPacks++
-                    return@forEach
-                }
-
-                val result = questPackImporter.mergeQuestPack(
-                    state = workingState,
-                    json = decrypted.questPackJson,
-                    closePrevious = false,
+                decryptedAssets += DecryptedSharedPackAsset(
+                    assetName = asset.name,
+                    packId = decrypted.packId,
+                    packVersion = decrypted.packVersion,
+                    questPackJson = decrypted.questPackJson,
+                    marker = decrypted.importMarker(),
                 )
-                workingState = result.state
-                imported += result.imported
-                updated += result.updated
-                skipped += result.skipped
-                incomingQuestIds += result.incomingQuestIds
-                errors += result.errors.map { "${decrypted.packId}: $it" }
-
-                if (result.errors.isEmpty()) {
-                    newMarkers += marker
-                }
-                appliedPacks++
             }.onFailure { error ->
                 skipped++
                 errors += "${asset.name}: ${error.message ?: "Shared pack could not be imported"}"
             }
+        }
+
+        val latestAssetsByPackId = decryptedAssets
+            .groupBy { it.packId }
+            .mapValues { (_, assetsForPack) ->
+                assetsForPack.maxWithOrNull(decryptedSharedPackAssetComparator)!!
+            }
+
+        decryptedAssets.sortedBy { it.assetName }.forEach { asset ->
+            val latestAsset = latestAssetsByPackId[asset.packId]
+            if (latestAsset != asset) return@forEach
+
+            if (asset.marker in importedMarkers || asset.marker in newMarkers) {
+                incomingQuestIds += questPackImporter.questIdsInQuestPack(asset.questPackJson)
+                unchangedPacks++
+                return@forEach
+            }
+
+            val result = questPackImporter.mergeQuestPack(
+                state = workingState,
+                json = asset.questPackJson,
+                closePrevious = false,
+            )
+            workingState = result.state
+            imported += result.imported
+            updated += result.updated
+            skipped += result.skipped
+            incomingQuestIds += result.incomingQuestIds
+            errors += result.errors.map { "${asset.packId}: $it" }
+
+            if (result.errors.isEmpty()) {
+                newMarkers += asset.marker
+            }
+            appliedPacks++
         }
 
         if (appliedPacks > 0 && incomingQuestIds.isNotEmpty() && errors.isEmpty()) {
@@ -112,4 +131,46 @@ class SharedPackImporter(
             .joinToString("") { "%02x".format(it) }
         return "$packId:$packVersion:$digest"
     }
+}
+
+private data class DecryptedSharedPackAsset(
+    val assetName: String,
+    val packId: String,
+    val packVersion: String,
+    val questPackJson: String,
+    val marker: String,
+)
+
+private val decryptedSharedPackAssetComparator = Comparator<DecryptedSharedPackAsset> { left, right ->
+    comparePackVersions(left.packVersion, right.packVersion)
+        .takeIf { it != 0 }
+        ?: left.assetName.compareTo(right.assetName)
+}
+
+private fun comparePackVersions(left: String, right: String): Int {
+    val leftParts = left.trim().split('.')
+    val rightParts = right.trim().split('.')
+    val partCount = maxOf(leftParts.size, rightParts.size)
+
+    for (index in 0 until partCount) {
+        val leftPart = leftParts.getOrNull(index)
+        val rightPart = rightParts.getOrNull(index)
+        if (leftPart == null) return -1
+        if (rightPart == null) return 1
+
+        val leftNumber = leftPart.toIntOrNull()
+        val rightNumber = rightPart.toIntOrNull()
+        when {
+            leftNumber != null && rightNumber != null && leftNumber != rightNumber -> {
+                return leftNumber.compareTo(rightNumber)
+            }
+
+            leftNumber == null || rightNumber == null -> {
+                val lexical = left.trim().compareTo(right.trim(), ignoreCase = true)
+                if (lexical != 0) return lexical
+            }
+        }
+    }
+
+    return left.trim().compareTo(right.trim(), ignoreCase = true)
 }
