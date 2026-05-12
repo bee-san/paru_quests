@@ -20,13 +20,6 @@ class MainActivity : ComponentActivity() {
         uri?.let { viewModel.importQuestPack(this, it) }
     }
 
-    private val exportQuestPack = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
-        val json = viewModel.consumePendingQuestPackExport()
-        if (uri != null && json != null) {
-            viewModel.exportQuestPack(this, uri, json)
-        }
-    }
-
     private val exportBackup = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         uri?.let { viewModel.exportBackup(this, it) }
     }
@@ -49,12 +42,6 @@ class MainActivity : ComponentActivity() {
             ParuchanQuestLogApp(
                 viewModel = viewModel,
                 onImportQuestPack = { importQuestPack.launch(arrayOf("application/json", "text/*")) },
-                onAddQuestPack = { json -> viewModel.addGeneratedQuestPack(json) },
-                onExportQuestPack = { json ->
-                    viewModel.prepareQuestPackExport(json)
-                    exportQuestPack.launch("paruchan-quest-pack.json")
-                },
-                onShareQuestPack = { json -> viewModel.shareQuestPack(this, json) },
                 onExportBackup = { exportBackup.launch("paruchan-quest-log-backup.json") },
                 onRestoreBackup = { restoreBackup.launch(arrayOf("application/json", "text/*")) },
                 onEnableQuestNotifications = ::enableQuestNotifications,

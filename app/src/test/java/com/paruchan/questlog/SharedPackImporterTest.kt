@@ -295,6 +295,106 @@ class SharedPackImporterTest {
     }
 
     @Test
+    fun `single current pack upgrade archives retired quests and preserves progress history`() {
+        val currentAsset = EncryptedSharedPackAsset(
+            name = "current.encrypted.json",
+            json = encryptedPack(
+                plaintext = """
+                    {
+                      "kind": "paruchan.quest-pack",
+                      "name": "Bedroom Dust Bandits",
+                      "quests": [
+                        {
+                          "id": "bedroom_dust_bandits_cycle_35_paruchans",
+                          "title": "Cycle until you see 35 paruchans",
+                          "xp": 400,
+                          "category": "Bedroom Dust Bandits",
+                          "goalType": "counter",
+                          "goalTarget": 35,
+                          "goalUnit": "paruchan"
+                        },
+                        {
+                          "id": "plant_holy_basil_in_sun",
+                          "title": "Plant your holy basil in the sun",
+                          "xp": 700,
+                          "category": "Garden"
+                        },
+                        {
+                          "id": "sorry_paruchan",
+                          "title": "Sorry paruchan",
+                          "xp": 7000,
+                          "category": "Paruchan"
+                        }
+                      ]
+                    }
+                """.trimIndent(),
+                packId = "bedroom-dust-bandits",
+                packVersion = "6",
+            ),
+        )
+        val completions = listOf(
+            Completion(
+                id = "completion-old",
+                questId = "paruchan_run_10_spot",
+                completedAt = "2026-05-11T08:00:00Z",
+                xpAwarded = 500,
+            ),
+            Completion(
+                id = "partial-cycle",
+                questId = "bedroom_dust_bandits_cycle_35_paruchans",
+                completedAt = "2026-05-11T09:00:00Z",
+                xpAwarded = 0,
+                progressAmount = 12,
+            ),
+        )
+        val oldState = QuestLogState(
+            quests = listOf(
+                Quest(
+                    id = "paruchan_run_10_spot",
+                    title = "Run until you spot 10 paruchans and wish them well in your heart <3",
+                    xp = 500,
+                    goalType = "counter",
+                    goalTarget = 10,
+                    goalUnit = "paruchan",
+                ),
+                Quest(
+                    id = "bedroom_dust_bandits_cycle_35_paruchans",
+                    title = "Cycle until you see 35 paruchans",
+                    xp = 400,
+                    category = "Bedroom Dust Bandits",
+                    goalType = "counter",
+                    goalTarget = 35,
+                    goalUnit = "paruchan",
+                ),
+                Quest(
+                    id = "plant_holy_basil_in_sun",
+                    title = "Plant your holy basil in the sun",
+                    xp = 700,
+                    category = "Garden",
+                ),
+            ),
+            completions = completions,
+        )
+
+        val result = SharedPackImporter().mergeEncryptedPacks(
+            state = oldState,
+            assets = listOf(currentAsset),
+            password = PASSWORD,
+            importedMarkers = emptySet(),
+        )
+
+        assertEquals(1, result.imported)
+        assertEquals(2, result.updated)
+        assertEquals(1, result.closed)
+        assertEquals(completions, result.state.completions)
+        assertTrue(result.state.quests.first { it.id == "paruchan_run_10_spot" }.archived)
+        assertFalse(result.state.quests.first { it.id == "bedroom_dust_bandits_cycle_35_paruchans" }.archived)
+        assertFalse(result.state.quests.first { it.id == "plant_holy_basil_in_sun" }.archived)
+        assertFalse(result.state.quests.first { it.id == "sorry_paruchan" }.archived)
+        assertEquals(7000, result.state.quests.first { it.id == "sorry_paruchan" }.xp)
+    }
+
+    @Test
     fun `newer shared pack generation replaces quests from older bundled versions`() {
         val firstAsset = EncryptedSharedPackAsset(
             name = "01-shared.encrypted.json",

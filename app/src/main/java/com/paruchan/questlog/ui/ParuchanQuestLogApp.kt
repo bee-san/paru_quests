@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,7 +38,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.History
@@ -53,7 +50,6 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Replay
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.SystemUpdateAlt
 import androidx.compose.material.icons.outlined.Timer
@@ -147,9 +143,6 @@ private val ParuchanScheme = lightColorScheme(
 fun ParuchanQuestLogApp(
     viewModel: QuestLogViewModel,
     onImportQuestPack: () -> Unit,
-    onAddQuestPack: (String) -> Unit,
-    onExportQuestPack: (String) -> Unit,
-    onShareQuestPack: (String) -> Unit,
     onExportBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
     onEnableQuestNotifications: () -> Unit,
@@ -258,17 +251,7 @@ fun ParuchanQuestLogApp(
                             )
 
                             Screen.Files -> ImportExportScreen(
-                                draft = viewModel.questPackDraft,
-                                draftQuest = viewModel.draftQuest,
-                                onDraftChange = viewModel::updateQuestPackDraft,
-                                onAddDraftQuest = viewModel::addDraftQuest,
-                                onRemoveDraftQuest = viewModel::removeDraftQuest,
-                                onBuildQuestPackJson = viewModel::questPackDraftJson,
                                 onImportQuestPack = onImportQuestPack,
-                                onImportBundledPack = { viewModel.importBundledThankYouPack(context) },
-                                onAddQuestPack = onAddQuestPack,
-                                onExportQuestPack = onExportQuestPack,
-                                onShareQuestPack = onShareQuestPack,
                                 onExportBackup = onExportBackup,
                                 onRestoreBackup = onRestoreBackup,
                             )
@@ -748,19 +731,6 @@ private fun QuestListCard(
     }
 }
 
-private fun compactPackQuestText(quest: Quest): String =
-    buildList {
-        val cadence = QuestCadence.from(quest)
-        val goalType = QuestGoalType.from(quest)
-        add(cadence.label)
-        if (goalType != QuestGoalType.Completion) add(goalType.label)
-        if (goalType != QuestGoalType.Completion || quest.goalTarget > 1) {
-            add("${quest.goalTarget} ${normalizedUnitLabel(quest.goalUnit, goalType, quest.goalTarget)}")
-        }
-        quest.timerMinutes?.takeIf { goalType != QuestGoalType.Timer }?.let { add("${it}m timer") }
-        add("${quest.xp} XP")
-    }.joinToString(" / ")
-
 @Composable
 private fun GoalProgressBar(progress: QuestProgress) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -970,17 +940,7 @@ private fun HistoryScreen(
 
 @Composable
 private fun ImportExportScreen(
-    draft: QuestPackDraft,
-    draftQuest: Quest?,
-    onDraftChange: (QuestPackDraft) -> Unit,
-    onAddDraftQuest: () -> Unit,
-    onRemoveDraftQuest: (Int) -> Unit,
-    onBuildQuestPackJson: () -> String,
     onImportQuestPack: () -> Unit,
-    onImportBundledPack: () -> Unit,
-    onAddQuestPack: (String) -> Unit,
-    onExportQuestPack: (String) -> Unit,
-    onShareQuestPack: (String) -> Unit,
     onExportBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
 ) {
@@ -991,27 +951,6 @@ private fun ImportExportScreen(
                 text = "Move quest packs and backups through Android's file picker.",
                 color = MutedInk,
                 style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        item {
-            QuestPackMaker(
-                draft = draft,
-                draftQuest = draftQuest,
-                onDraftChange = onDraftChange,
-                onAddDraftQuest = onAddDraftQuest,
-                onRemoveDraftQuest = onRemoveDraftQuest,
-                onBuildQuestPackJson = onBuildQuestPackJson,
-                onAddQuestPack = onAddQuestPack,
-                onExportQuestPack = onExportQuestPack,
-                onShareQuestPack = onShareQuestPack,
-            )
-        }
-        item {
-            OrnateActionButton(
-                icon = Icons.Outlined.Star,
-                title = "Add thank-you pack",
-                detail = "One bundled quest: Thank you paruchan, 5000 XP",
-                onClick = onImportBundledPack,
             )
         }
         item {
@@ -1042,188 +981,6 @@ private fun ImportExportScreen(
 }
 
 @Composable
-@OptIn(ExperimentalLayoutApi::class)
-private fun QuestPackMaker(
-    draft: QuestPackDraft,
-    draftQuest: Quest?,
-    onDraftChange: (QuestPackDraft) -> Unit,
-    onAddDraftQuest: () -> Unit,
-    onRemoveDraftQuest: (Int) -> Unit,
-    onBuildQuestPackJson: () -> String,
-    onAddQuestPack: (String) -> Unit,
-    onExportQuestPack: (String) -> Unit,
-    onShareQuestPack: (String) -> Unit,
-) {
-    Card(
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, Gold.copy(alpha = 0.42f)),
-        colors = CardDefaults.cardColors(containerColor = Parchment.copy(alpha = 0.98f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            SectionHeader("Quest Pack Maker")
-            CompactTextField(
-                value = draft.packName,
-                onValueChange = { onDraftChange(draft.copy(packName = it)) },
-                label = "Pack name",
-            )
-            CompactTextField(
-                value = draft.title,
-                onValueChange = { onDraftChange(draft.copy(title = it)) },
-                label = "Quest title",
-            )
-            CompactTextField(
-                value = draft.flavourText,
-                onValueChange = { onDraftChange(draft.copy(flavourText = it)) },
-                label = "Flavour text",
-            )
-            CompactTextField(
-                value = draft.xpText,
-                onValueChange = { onDraftChange(draft.copy(xpText = it.filter(Char::isDigit).ifBlank { "0" })) },
-                label = "XP",
-                numeric = true,
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                QuestCadence.entries.forEach { item ->
-                    FilterPill(
-                        text = item.label,
-                        selected = draft.cadence == item,
-                        onClick = { onDraftChange(draft.copy(cadence = item)) },
-                    )
-                }
-            }
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                QuestGoalType.entries.forEach { item ->
-                    FilterPill(
-                        text = item.label,
-                        selected = draft.goalType == item,
-                        onClick = {
-                            val nextUnit = when (item) {
-                                QuestGoalType.Counter -> if (draft.goalUnit == "completion" || draft.goalUnit == "minute") "unit" else draft.goalUnit
-                                QuestGoalType.Timer -> "minute"
-                                QuestGoalType.Completion -> if (draft.goalUnit == "unit" || draft.goalUnit == "minute") "completion" else draft.goalUnit
-                            }
-                            onDraftChange(draft.copy(goalType = item, goalUnit = nextUnit))
-                        },
-                    )
-                }
-            }
-            CompactTextField(
-                value = draft.goalTargetText,
-                onValueChange = {
-                    onDraftChange(draft.copy(goalTargetText = it.filter(Char::isDigit).ifBlank { "1" }))
-                },
-                label = when (draft.goalType) {
-                    QuestGoalType.Counter -> "Required count"
-                    QuestGoalType.Timer -> "Required minutes"
-                    QuestGoalType.Completion -> "Goal target"
-                },
-                numeric = true,
-            )
-            if (draft.goalType != QuestGoalType.Timer) {
-                CompactTextField(
-                    value = draft.goalUnit,
-                    onValueChange = { onDraftChange(draft.copy(goalUnit = it)) },
-                    label = if (draft.goalType == QuestGoalType.Counter) "Counter unit" else "Unit",
-                )
-            }
-            if (draft.goalType == QuestGoalType.Completion) {
-                CompactTextField(
-                    value = draft.timerMinutesText,
-                    onValueChange = {
-                        onDraftChange(draft.copy(timerMinutesText = it.filter(Char::isDigit).take(4)))
-                    },
-                    label = "Timer minutes",
-                    numeric = true,
-                )
-            }
-            CompactTextField(
-                value = draft.icon,
-                onValueChange = { onDraftChange(draft.copy(icon = it)) },
-                label = "Icon",
-            )
-
-            Button(
-                onClick = onAddDraftQuest,
-                enabled = draftQuest != null,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
-                border = BorderStroke(1.dp, Gold),
-            ) {
-                Icon(Icons.Outlined.AddCircle, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                DisplayText("Add quest to pack", 20.sp, Gold, FontWeight.Bold, maxLines = 2, textAlign = TextAlign.Center)
-            }
-
-            if (draft.quests.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("${draft.quests.size} quest${if (draft.quests.size == 1) "" else "s"} ready", color = MutedInk)
-                    draft.quests.forEachIndexed { index, quest ->
-                        DraftQuestRow(
-                            quest = quest,
-                            onRemove = { onRemoveDraftQuest(index) },
-                        )
-                    }
-                }
-            }
-
-            Button(
-                onClick = { onAddQuestPack(onBuildQuestPackJson()) },
-                enabled = draft.quests.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
-                border = BorderStroke(1.dp, Gold),
-            ) {
-                Icon(Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Add to Quest Log", maxLines = 1)
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(
-                    onClick = { onExportQuestPack(onBuildQuestPackJson()) },
-                    enabled = draft.quests.isNotEmpty(),
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
-                    border = BorderStroke(1.dp, Gold),
-                ) {
-                    Icon(Icons.Outlined.FileDownload, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Export", maxLines = 1)
-                }
-                Button(
-                    onClick = { onShareQuestPack(onBuildQuestPackJson()) },
-                    enabled = draft.quests.isNotEmpty(),
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = GoldDeep, contentColor = Color.White),
-                ) {
-                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Share", maxLines = 1)
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun CompactTextField(
     value: String,
     onValueChange: (String) -> Unit,
@@ -1245,44 +1002,6 @@ private fun CompactTextField(
         visualTransformation = visualTransformation,
         shape = RoundedCornerShape(8.dp),
     )
-}
-
-@Composable
-private fun DraftQuestRow(
-    quest: Quest,
-    onRemove: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Lilac.copy(alpha = 0.36f))
-            .border(BorderStroke(1.dp, Gold.copy(alpha = 0.28f)), RoundedCornerShape(8.dp))
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CircleQuestIcon(modifier = Modifier.size(44.dp), icon = quest.icon)
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            DisplayText(quest.title, 18.sp, Ink, FontWeight.Bold)
-            Text(
-                compactPackQuestText(quest),
-                color = MutedInk,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 3,
-            )
-        }
-        Icon(
-            Icons.Outlined.Delete,
-            contentDescription = "Remove quest",
-            tint = Plum,
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(onClick = onRemove)
-                .padding(6.dp),
-        )
-    }
 }
 
 @Composable
@@ -1565,34 +1284,6 @@ private fun QuickAction(
         Icon(icon, contentDescription = null, tint = Plum, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(6.dp))
         Text(label, maxLines = 1)
-    }
-}
-
-@Composable
-private fun FilterPill(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .heightIn(min = 46.dp)
-            .widthIn(min = 76.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Plum else Parchment.copy(alpha = 0.8f))
-            .border(BorderStroke(1.dp, if (selected) Gold else Gold.copy(alpha = 0.35f)), RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            color = if (selected) Gold else Ink,
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-        )
     }
 }
 

@@ -35,20 +35,19 @@ class BundledSharedPackRepository(
     }
 
     private fun readBundledAssets(): List<EncryptedSharedPackAsset> {
-        val names = context.assets.list(SHARED_PACK_DIR).orEmpty()
-            .filter { it.endsWith(".json", ignoreCase = true) }
-        return names.map { name ->
+        return listOf(
             EncryptedSharedPackAsset(
-                name = name,
-                json = context.assets.open("$SHARED_PACK_DIR/$name")
+                name = CURRENT_SHARED_PACK_ASSET_NAME,
+                json = context.assets.open("$SHARED_PACK_DIR/$CURRENT_SHARED_PACK_ASSET_NAME")
                     .bufferedReader()
                     .use { it.readText() },
             )
-        }
+        )
     }
 
     private companion object {
         const val SHARED_PACK_DIR = "shared-packs"
+        const val CURRENT_SHARED_PACK_ASSET_NAME = "current.encrypted.json"
         const val KEY_IMPORTED_MARKERS = "imported_markers"
     }
 }

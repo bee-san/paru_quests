@@ -7,8 +7,8 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 - Target: native Android APK only.
 - V1 is tracker-only: no accounts, no server, no database, and no built-in AI/image generation.
 - Curated private quest packs may be shipped as encrypted APK assets under `app/src/main/assets/shared-packs/`; this is not remote sync and must not include GitHub tokens or accounts.
-- The app ships one user-requested bundled quest pack at `app/src/main/assets/quest-packs/thank-you-paruchan.json`; it contains only `Thank you paruchan` for `5000 XP`.
-- The current private shared pack asset is `app/src/main/assets/shared-packs/paruchan-quest-pack.encrypted.json`; plaintext source packs must stay outside git.
+- The APK ships exactly one current private shared pack asset: `app/src/main/assets/shared-packs/current.encrypted.json`; plaintext source packs must stay outside git.
+- Do not ship public starter-pack assets or retired encrypted shared-pack assets in future APKs.
 - Quest data is private user data. It lives only in local app storage or user-imported/exported JSON files; Android cloud backup stays disabled.
 - The stable Android package/application id is `com.paruchan.questlog`; do not change it casually because sideloaded updates depend on package and signing continuity.
 - Canonical paruchan reference: `/home/bee/Downloads/paruchan.jpg`. Paruchans are soft white plush blobs with rounded cat ears, blue embroidered eyes, a pink nose, and pink cheek/whisker stripes. Do not draw them as generic fantasy cats, do not add smiles, and do not add separate arms, paws, or feet.
@@ -45,17 +45,18 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 ## Import, Export, Restore
 
 - Quest-pack import uses Android's system file picker and accepts JSON arrays or objects with a `quests` array.
-- Quest-pack creation is available in the Files screen. It builds shareable JSON objects with `kind: "paruchan.quest-pack"` and a `quests` array.
-- Quest-pack export uses `ACTION_CREATE_DOCUMENT`; quest-pack share writes a temporary JSON file under `cacheDir/quest-packs` and sends it through Android's share sheet with the app `FileProvider`.
+- The Files screen keeps manual quest-pack import, full backup export, and backup restore. Do not restore the in-app quest-pack maker or built-in starter-pack button unless explicitly requested.
 - Quest-pack import makes the imported pack the current open quest set.
 - Existing quests that are not present in the imported pack are archived without adding completions or awarding XP.
 - If an imported quest has `id`, update by `id`.
 - If no `id` is present, derive a stable ID from normalized `title/category/xp/flavourText/repeatable` to avoid duplicates on re-import.
+- `category` remains part of the JSON contract for backward compatibility, but the app should not surface or rely on categories for current user-facing workflows.
 - Encrypted shared packs use `kind: "paruchan.encrypted-quest-pack"` with PBKDF2-HMAC-SHA256 and AES-256-GCM. The decrypted payload is the existing quest-pack JSON format.
-- When multiple bundled shared packs are imported in one run, close previous quests only after all bundled packs in that run have been accounted for, including packs that were already up to date.
+- Bundled shared-pack import reads only `shared-packs/current.encrypted.json`. Tests must fail if additional `shared-packs/` assets or old `quest-packs/` starter assets are present.
+- The current pack should archive retired active quests on-device while preserving completions, XP totals, and partial progress records.
 - The shared-pack password is entered in Settings, stored locally with an Android Keystore key, and used to auto-import bundled shared packs on app launch after an APK update.
 - Do not hardcode shared-pack passwords in app code, docs, tests, or committed assets. The local ignored env file is `agent-skills/paruchan-shared-packs/.env`; the tracked example is `.env.example`.
-- Use `agent-skills/paruchan-shared-packs/SKILL.md` and `tools/encrypt_shared_pack.sh` when adding private shared packs. Keep plaintext packs outside git, preferably under `/tmp`, and commit only encrypted assets.
+- Use `agent-skills/paruchan-shared-packs/SKILL.md` and `tools/encrypt_shared_pack.sh` when replacing the private shared pack. Keep plaintext packs outside git, preferably under `/tmp`, and commit only `app/src/main/assets/shared-packs/current.encrypted.json`.
 - Full backup export writes the whole app state JSON through `ACTION_CREATE_DOCUMENT`.
 - Full backup restore replaces the whole state only after user confirmation.
 - Backups include `levels` so future custom curves can be edited/imported without a v1 level designer UI.
