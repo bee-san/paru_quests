@@ -9,7 +9,7 @@ import java.io.File
 
 class BundledSharedPackAssetTest {
     @Test
-    fun `apk bundles exactly one current shared pack asset`() {
+    fun `source assets contain exactly one current shared pack asset`() {
         val assets = assetsDir()
         val bundledFiles = assets.walkTopDown()
             .filter { it.isFile }

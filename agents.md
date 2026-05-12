@@ -49,7 +49,7 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 - Quest-pack import makes the imported pack the current open quest set.
 - Existing quests that are not present in the imported pack are archived without adding completions or awarding XP.
 - If an imported quest has `id`, update by `id`.
-- If no `id` is present, derive a stable ID from normalized `title/category/xp/flavourText/repeatable` to avoid duplicates on re-import.
+- If no `id` is present, derive a stable ID from normalized title and goal shape to avoid duplicates on re-import. Do not include `category`; keep recognizing old category-derived implicit IDs as an update fallback.
 - `category` remains part of the JSON contract for backward compatibility, but the app should not surface or rely on categories for current user-facing workflows.
 - Encrypted shared packs use `kind: "paruchan.encrypted-quest-pack"` with PBKDF2-HMAC-SHA256 and AES-256-GCM. The decrypted payload is the existing quest-pack JSON format.
 - Bundled shared-pack import reads only `shared-packs/current.encrypted.json`. Tests must fail if additional `shared-packs/` assets or old `quest-packs/` starter assets are present.

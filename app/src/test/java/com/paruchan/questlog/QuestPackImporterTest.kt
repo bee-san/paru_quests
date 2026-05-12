@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.MessageDigest
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -104,6 +105,94 @@ class QuestPackImporterTest {
         assertEquals(firstId, second.state.quests.single().id)
         assertEquals(175, second.state.quests.single().xp)
         assertEquals("Very tasty", second.state.quests.single().flavourText)
+    }
+
+    @Test
+    fun `implicit ids do not depend on category`() {
+        val first = importer.mergeQuestPack(
+            QuestLogState(),
+            """[{"title":"Eat Thai food","flavourText":"Tasty","xp":150,"category":"Food"}]""",
+        )
+        val firstId = first.state.quests.single().id
+
+        val second = importer.mergeQuestPack(
+            first.state,
+            """[{"title":"Eat Thai food","flavourText":"Tasty","xp":175,"category":"Meals"}]""",
+        )
+
+        assertEquals(0, second.imported)
+        assertEquals(1, second.updated)
+        assertEquals(1, second.state.quests.size)
+        assertEquals(firstId, second.state.quests.single().id)
+        assertEquals("Meals", second.state.quests.single().category)
+        assertEquals(175, second.state.quests.single().xp)
+    }
+
+    @Test
+    fun `implicit imports update legacy category-derived ids without changing the stored id`() {
+        val legacyId = legacyCategoryQuestId(
+            title = "Water plants",
+            category = "Home",
+            cadence = "once",
+            goalType = "completion",
+            goalTarget = 1,
+            goalUnit = "completion",
+            timerMinutes = "",
+            icon = "star",
+        )
+        val state = QuestLogState(
+            quests = listOf(
+                Quest(
+                    id = legacyId,
+                    title = "Water plants",
+                    xp = 20,
+                    category = "Home",
+                )
+            )
+        )
+
+        val result = importer.mergeQuestPack(
+            state,
+            """[{"title":"Water plants","xp":25,"category":"Garden"}]""",
+        )
+
+        assertEquals(0, result.imported)
+        assertEquals(1, result.updated)
+        assertEquals(1, result.state.quests.size)
+        assertEquals(legacyId, result.state.quests.single().id)
+        assertEquals("Garden", result.state.quests.single().category)
+        assertEquals(25, result.state.quests.single().xp)
+    }
+
+    @Test
+    fun `quest ids in pack resolves legacy category-derived ids against state`() {
+        val legacyId = legacyCategoryQuestId(
+            title = "Water plants",
+            category = "Home",
+            cadence = "once",
+            goalType = "completion",
+            goalTarget = 1,
+            goalUnit = "completion",
+            timerMinutes = "",
+            icon = "star",
+        )
+        val state = QuestLogState(
+            quests = listOf(
+                Quest(
+                    id = legacyId,
+                    title = "Water plants",
+                    xp = 20,
+                    category = "Home",
+                )
+            )
+        )
+
+        val questIds = importer.questIdsInQuestPack(
+            """[{"title":"Water plants","xp":25,"category":"Garden"}]""",
+            state,
+        )
+
+        assertEquals(setOf(legacyId), questIds)
     }
 
     @Test
@@ -299,5 +388,32 @@ class QuestPackImporterTest {
         assertEquals(0, result.state.quests.size)
         assertEquals(2, result.skipped)
         assertEquals(2, result.errors.size)
+    }
+
+    private fun legacyCategoryQuestId(
+        title: String,
+        category: String,
+        cadence: String,
+        goalType: String,
+        goalTarget: Int,
+        goalUnit: String,
+        timerMinutes: String,
+        icon: String,
+    ): String {
+        val normalized = listOf(
+            title,
+            category,
+            cadence,
+            goalType,
+            goalTarget.toString(),
+            goalUnit,
+            timerMinutes,
+            icon,
+        ).joinToString("|") { it.trim().lowercase().replace(Regex("\\s+"), " ") }
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(normalized.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+            .take(16)
+        return "quest_$digest"
     }
 }

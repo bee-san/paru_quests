@@ -78,7 +78,7 @@ class SharedPackImporter(
 
         currentGenerationAssets.sortedBy { it.assetName }.forEach { asset ->
             if (asset.marker in importedMarkers || asset.marker in newMarkers) {
-                incomingQuestIds += questPackImporter.questIdsInQuestPack(asset.questPackJson)
+                incomingQuestIds += questPackImporter.questIdsInQuestPack(asset.questPackJson, workingState)
                 unchangedPacks++
                 return@forEach
             }

@@ -30,6 +30,7 @@ class QuestPackImporter(
 
         val existingById = state.quests.associateBy { it.id }.toMutableMap()
         val order = state.quests.mapTo(mutableListOf()) { it.id }
+        val existingImplicitIds = implicitQuestIdsByCurrentStableId(state.quests)
         val incomingQuestIds = mutableSetOf<String>()
         val errors = mutableListOf<String>()
         var imported = 0
@@ -45,14 +46,17 @@ class QuestPackImporter(
             }
 
             val quest = parsed.quest
-            incomingQuestIds += quest.id
-            val existing = existingById[quest.id]
+            val existingId = existingQuestIdFor(parsed, existingById, existingImplicitIds)
+            val mergedQuestId = existingId ?: quest.id
+            incomingQuestIds += mergedQuestId
+            val existing = existingId?.let { existingById[it] }
             if (existing == null) {
                 existingById[quest.id] = quest
                 order += quest.id
                 imported++
             } else {
-                existingById[quest.id] = quest.copy(
+                existingById[existing.id] = quest.copy(
+                    id = existing.id,
                     createdAt = existing.createdAt.ifBlank { quest.createdAt },
                 )
                 updated++
@@ -91,7 +95,7 @@ class QuestPackImporter(
         return ClosePreviousResult(state.copy(quests = quests), closed = closed)
     }
 
-    fun questIdsInQuestPack(json: String): Set<String> {
+    fun questIdsInQuestPack(json: String, state: QuestLogState? = null): Set<String> {
         val root = try {
             JsonParser.parseString(json)
         } catch (error: Exception) {
@@ -102,8 +106,12 @@ class QuestPackImporter(
             root.isJsonObject && root.asJsonObject["quests"]?.isJsonArray == true -> root.asJsonObject["quests"].asJsonArray
             else -> return emptySet()
         }
+        val existingById = state?.quests?.associateBy { it.id }.orEmpty()
+        val existingImplicitIds = state?.let { implicitQuestIdsByCurrentStableId(it.quests) }.orEmpty()
         return quests.mapIndexedNotNull { index, element ->
-            parseQuest(index, element).quest?.id
+            val parsed = parseQuest(index, element)
+            val quest = parsed.quest ?: return@mapIndexedNotNull null
+            existingQuestIdFor(parsed, existingById, existingImplicitIds) ?: quest.id
         }.toSet()
     }
 
@@ -165,10 +173,9 @@ class QuestPackImporter(
             .ifBlank { defaultGoalUnit(goalType) }
         val icon = obj.string("icon").trim().ifBlank { "star" }
         val explicitId = obj.string("id").trim()
-        val id = explicitId.ifBlank {
+        val implicitId = if (explicitId.isBlank()) {
             stableQuestId(
                 title = title,
-                category = category,
                 cadence = cadence,
                 goalType = goalType,
                 goalTarget = goalTarget,
@@ -176,7 +183,10 @@ class QuestPackImporter(
                 timerMinutes = if (goalType == QuestGoalType.Timer) null else timerMinutes,
                 icon = icon,
             )
+        } else {
+            null
         }
+        val id = explicitId.ifBlank { implicitId.orEmpty() }
 
         return ParsedQuest(
             quest = Quest(
@@ -194,11 +204,32 @@ class QuestPackImporter(
                 timerMinutes = if (goalType == QuestGoalType.Timer) null else timerMinutes,
                 createdAt = obj.string("createdAt").trim().ifBlank { Instant.now(clock).toString() },
                 archived = obj.boolean("archived") ?: false,
-            )
+            ),
+            implicitId = implicitId,
         )
     }
 
     private fun stableQuestId(
+        title: String,
+        cadence: QuestCadence,
+        goalType: QuestGoalType,
+        goalTarget: Int,
+        goalUnit: String,
+        timerMinutes: Int?,
+        icon: String,
+    ): String {
+        return stableQuestIdFromParts(
+            title,
+            cadence.wireName,
+            goalType.wireName,
+            goalTarget.toString(),
+            goalUnit,
+            timerMinutes?.toString().orEmpty(),
+            icon,
+        )
+    }
+
+    private fun legacyCategoryQuestId(
         title: String,
         category: String,
         cadence: QuestCadence,
@@ -208,7 +239,7 @@ class QuestPackImporter(
         timerMinutes: Int?,
         icon: String,
     ): String {
-        val normalized = listOf(
+        return stableQuestIdFromParts(
             title,
             category,
             cadence.wireName,
@@ -218,12 +249,97 @@ class QuestPackImporter(
             timerMinutes?.toString().orEmpty(),
             icon,
         )
+    }
+
+    private fun legacyGoalQuestId(
+        quest: Quest,
+    ): String {
+        return stableQuestIdFromParts(
+            quest.title,
+            quest.category,
+            quest.cadence,
+            quest.goalTarget.coerceAtLeast(1).toString(),
+            quest.goalUnit,
+            quest.timerMinutes?.toString().orEmpty(),
+            quest.icon,
+        )
+    }
+
+    private fun legacyOriginalQuestId(quest: Quest): String {
+        return stableQuestIdFromParts(
+            quest.title,
+            quest.category,
+            quest.xp.toString(),
+            quest.flavourText,
+            quest.repeatable.toString(),
+        )
+    }
+
+    private fun stableQuestIdFromParts(vararg parts: String): String {
+        val normalized = parts
             .joinToString("|") { it.trim().lowercase().replace(Regex("\\s+"), " ") }
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(normalized.toByteArray())
             .joinToString("") { "%02x".format(it) }
             .take(16)
         return "quest_$digest"
+    }
+
+    private fun implicitQuestIdsByCurrentStableId(quests: List<Quest>): Map<String, String> {
+        return quests
+            .filter { it.id in implicitIdsFor(it) }
+            .groupBy { currentStableIdFor(it) }
+            .mapNotNull { (stableId, matchingQuests) ->
+                matchingQuests.singleOrNull()?.let { stableId to it.id }
+            }
+            .toMap()
+    }
+
+    private fun existingQuestIdFor(
+        parsed: ParsedQuest,
+        existingById: Map<String, Quest>,
+        existingImplicitIds: Map<String, String>,
+    ): String? {
+        val quest = parsed.quest ?: return null
+        return when {
+            existingById.containsKey(quest.id) -> quest.id
+            parsed.implicitId != null -> existingImplicitIds[parsed.implicitId]
+            else -> null
+        }
+    }
+
+    private fun currentStableIdFor(quest: Quest): String {
+        val cadence = QuestCadence.from(quest)
+        val goalType = QuestGoalType.from(quest)
+        return stableQuestId(
+            title = quest.title,
+            cadence = cadence,
+            goalType = goalType,
+            goalTarget = quest.goalTarget.coerceAtLeast(1),
+            goalUnit = quest.goalUnit,
+            timerMinutes = if (goalType == QuestGoalType.Timer) null else quest.timerMinutes,
+            icon = quest.icon,
+        )
+    }
+
+    private fun implicitIdsFor(quest: Quest): Set<String> {
+        val cadence = QuestCadence.from(quest)
+        val goalType = QuestGoalType.from(quest)
+        return setOf(
+            currentStableIdFor(quest),
+            legacyCategoryQuestId(
+                title = quest.title,
+                category = quest.category,
+                cadence = cadence,
+                goalType = goalType,
+                goalTarget = quest.goalTarget.coerceAtLeast(1),
+                goalUnit = quest.goalUnit,
+                timerMinutes = if (goalType == QuestGoalType.Timer) null else quest.timerMinutes,
+                icon = quest.icon,
+            ),
+            legacyGoalQuestId(quest),
+            legacyOriginalQuestId(quest),
+        )
     }
 
     private fun JsonObject.string(name: String): String = runCatching {
@@ -277,4 +393,5 @@ data class ClosePreviousResult(
 private data class ParsedQuest(
     val quest: Quest? = null,
     val error: String? = null,
+    val implicitId: String? = null,
 )
