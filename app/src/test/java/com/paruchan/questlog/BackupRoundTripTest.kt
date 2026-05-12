@@ -3,6 +3,7 @@ package com.paruchan.questlog
 import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestLogJsonCodec
 import com.paruchan.questlog.core.QuestLogState
+import com.paruchan.questlog.core.UserBackupFiles
 import com.paruchan.questlog.data.QuestLogRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -44,6 +45,22 @@ class BackupRoundTripTest {
         assertEquals("Make tea", restored.quests.single().title)
         assertEquals(15, restored.completions.single().xpAwarded)
         assertNotNull(restored.exportedAt)
+    }
+
+    @Test
+    fun `backup encoding for an existing state adds exported timestamp`() {
+        val repository = QuestLogRepository(
+            stateFile = temp.newFile("encode-source.json"),
+            clock = fixedClock(day = 5),
+        )
+
+        val backup = repository.encodeBackup(
+            QuestLogState(quests = listOf(Quest(id = "q1", title = "Keep safe", xp = 25))),
+        )
+        val restored = QuestLogJsonCodec().decodeBackup(backup)
+
+        assertEquals("Keep safe", restored.quests.single().title)
+        assertEquals("2026-05-05T12:00:00Z", restored.exportedAt)
     }
 
     @Test
@@ -111,6 +128,27 @@ class BackupRoundTripTest {
         assertFalse(backups.contains("questlog-2026-05-01.json"))
         assertFalse(backups.contains("questlog-2026-05-02.json"))
         assertTrue(backups.contains("questlog-2026-05-12.json"))
+    }
+
+    @Test
+    fun `user backup files keep latest plus newest ten dated backups`() {
+        val names = (1..12).map {
+            "paruchan-quest-log-2026-05-${it.toString().padStart(2, '0')}.json"
+        } + listOf(
+            UserBackupFiles.LatestBackupName,
+            "holiday-photo.json",
+        )
+
+        val prune = UserBackupFiles.backupNamesToPrune(names)
+
+        assertEquals(
+            listOf(
+                "paruchan-quest-log-2026-05-02.json",
+                "paruchan-quest-log-2026-05-01.json",
+            ),
+            prune,
+        )
+        assertFalse(UserBackupFiles.isDatedBackupName(UserBackupFiles.LatestBackupName))
     }
 
     private fun assertIllegalArgument(block: () -> Unit): IllegalArgumentException {

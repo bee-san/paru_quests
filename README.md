@@ -2,9 +2,9 @@
 
 Native Android MVP for a private two-person quest tracker.
 
-The app stores all quest data locally in `filesDir/questlog.json`. Android cloud backup is disabled. There are no accounts, no server, no database, and no built-in AI image generation. The app also keeps private daily local snapshots under `filesDir/questlog-backups/`, retaining the newest 10 copies.
+The app stores all quest data locally in `filesDir/questlog.json`. Android cloud backup is disabled. There are no accounts, no server, no database, and no built-in AI image generation. The app also keeps private daily local snapshots under `filesDir/questlog-backups/`, retaining the newest 10 copies. For uninstall-safe backups, the Files screen can write `paruchan-quest-log-latest.json` plus the newest 10 dated copies into a user-picked folder.
 
-The Files screen keeps practical file tools: manual quest-pack import, full backup export, and backup restore. Importing any quest pack makes that pack the current open quest set: older quests are archived without adding completions or XP, while matching quest IDs update in place.
+The Files screen keeps practical file tools: manual quest-pack import, full backup export, backup restore, and optional folder backups. Importing any quest pack makes that pack the current open quest set: older quests are archived without adding completions or XP, while matching quest IDs update in place.
 
 Settings includes backup export and daily quest reminders. Reminder notifications are local-only and are posted only when the quest log still has uncompleted available quests.
 

@@ -28,6 +28,10 @@ class MainActivity : ComponentActivity() {
         uri?.let { viewModel.requestRestore(it) }
     }
 
+    private val chooseBackupFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        uri?.let { viewModel.selectBackupFolder(it) }
+    }
+
     private val requestNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             viewModel.enableQuestNotifications()
@@ -44,6 +48,7 @@ class MainActivity : ComponentActivity() {
                 onImportQuestPack = { importQuestPack.launch(arrayOf("application/json", "text/*")) },
                 onExportBackup = { exportBackup.launch("paruchan-quest-log-backup.json") },
                 onRestoreBackup = { restoreBackup.launch(arrayOf("application/json", "text/*")) },
+                onChooseBackupFolder = { chooseBackupFolder.launch(null) },
                 onEnableQuestNotifications = ::enableQuestNotifications,
             )
         }

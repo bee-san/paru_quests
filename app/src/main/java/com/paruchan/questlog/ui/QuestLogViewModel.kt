@@ -18,12 +18,15 @@ import com.paruchan.questlog.core.QuestProgress
 import com.paruchan.questlog.data.BundledSharedPackRepository
 import com.paruchan.questlog.data.QuestLogRepository
 import com.paruchan.questlog.data.SharedPackSecretStore
+import com.paruchan.questlog.data.UserBackupFolderStore
+import com.paruchan.questlog.data.UserBackupWriteResult
 import com.paruchan.questlog.notification.QuestNotificationPreferences
 import com.paruchan.questlog.notification.QuestNotificationScheduler
 import com.paruchan.questlog.notification.QuestNotificationSettings
 import com.paruchan.questlog.update.GitHubReleaseUpdater
 import com.paruchan.questlog.update.InstallResult
 import com.paruchan.questlog.update.UpdateCheckResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,6 +36,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
     private val repository = QuestLogRepository(File(application.filesDir, "questlog.json"))
     private val sharedPackRepository = BundledSharedPackRepository(application, repository)
     private val sharedPackSecretStore = SharedPackSecretStore(application)
+    private val userBackupFolderStore = UserBackupFolderStore(application)
     private val questNotificationPreferences = QuestNotificationPreferences(application)
     private val engine = QuestLogEngine()
     private val updater = GitHubReleaseUpdater(
@@ -56,6 +60,12 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         private set
 
     var sharedPackPasswordSaved: Boolean by mutableStateOf(sharedPackSecretStore.hasPassword())
+        private set
+
+    var userBackupFolderEnabled: Boolean by mutableStateOf(userBackupFolderStore.hasFolder())
+        private set
+
+    var userBackupInProgress: Boolean by mutableStateOf(false)
         private set
 
     var pendingRestoreUri: Uri? by mutableStateOf(null)
@@ -132,6 +142,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
                     message = error.message ?: "Quest completion failed"
                     return@launch
                 }
+                writeUserBackup(result.state, announceSuccess = false)
                 if (
                     quest != null &&
                     result.completion.xpAwarded > 0 &&
@@ -156,6 +167,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
             }.onSuccess { result ->
                 state = result.state
                 message = result.summary
+                writeUserBackup(result.state, announceSuccess = false)
             }.onFailure { error ->
                 message = error.message ?: "Quest pack import failed"
             }
@@ -206,6 +218,40 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun selectBackupFolder(uri: Uri) {
+        viewModelScope.launch {
+            loadJob.join()
+            runCatching {
+                withContext(Dispatchers.IO) { userBackupFolderStore.saveFolder(uri) }
+                userBackupFolderEnabled = true
+                writeUserBackup(state, announceSuccess = true)
+            }.onFailure { error ->
+                withContext(Dispatchers.IO) { userBackupFolderStore.clearFolder() }
+                userBackupFolderEnabled = false
+                message = error.message ?: "Could not use that backup folder"
+            }
+        }
+    }
+
+    fun backupNow() {
+        viewModelScope.launch {
+            loadJob.join()
+            if (!userBackupFolderEnabled) {
+                message = "Choose a backup folder first"
+                return@launch
+            }
+            writeUserBackup(state, announceSuccess = true)
+        }
+    }
+
+    fun clearBackupFolder() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { userBackupFolderStore.clearFolder() }
+            userBackupFolderEnabled = false
+            message = "Folder backups off"
+        }
+    }
+
     fun requestRestore(uri: Uri) {
         pendingRestoreUri = uri
     }
@@ -225,6 +271,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
             }.onSuccess { restored ->
                 state = restored
                 message = "Backup restored"
+                writeUserBackup(restored, announceSuccess = false)
             }.onFailure { error ->
                 message = error.message ?: "Backup restore failed"
             }
@@ -312,6 +359,9 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
                 }
 
                 state = result.state
+                if (result.changed) {
+                    writeUserBackup(result.state, announceSuccess = false)
+                }
                 if (!automatic || result.changed) {
                     message = if (savePasswordOnSuccess) {
                         "Shared pack password saved. ${result.summary}"
@@ -337,6 +387,40 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
             ?.bufferedWriter()
             ?.use { it.write(text) }
             ?: error("Could not write selected file")
+    }
+
+    private suspend fun writeUserBackup(currentState: QuestLogState, announceSuccess: Boolean) {
+        if (!userBackupFolderStore.hasFolder()) {
+            userBackupFolderEnabled = false
+            if (announceSuccess) {
+                message = "Choose a backup folder first"
+            }
+            return
+        }
+
+        userBackupInProgress = true
+        try {
+            runCatching {
+                val json = withContext(Dispatchers.IO) { repository.encodeBackup(currentState) }
+                withContext(Dispatchers.IO) { userBackupFolderStore.writeBackup(json) }
+            }.onSuccess { result ->
+                userBackupFolderEnabled = userBackupFolderStore.hasFolder()
+                if (announceSuccess) {
+                    message = when (result) {
+                        UserBackupWriteResult.Disabled -> "Choose a backup folder first"
+                        is UserBackupWriteResult.Saved -> "Folder backup saved"
+                    }
+                }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                userBackupFolderEnabled = userBackupFolderStore.hasFolder()
+                if (announceSuccess || message == null) {
+                    message = error.message ?: "Folder backup failed"
+                }
+            }
+        } finally {
+            userBackupInProgress = false
+        }
     }
 
 }

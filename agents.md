@@ -9,7 +9,7 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 - Curated private quest packs may be shipped as encrypted APK assets under `app/src/main/assets/shared-packs/`; this is not remote sync and must not include GitHub tokens or accounts.
 - The APK ships exactly one current private shared pack asset: `app/src/main/assets/shared-packs/current.encrypted.json`; plaintext source packs must stay outside git.
 - Do not ship public starter-pack assets or retired encrypted shared-pack assets in future APKs.
-- Quest data is private user data. It lives only in local app storage or user-imported/exported JSON files; Android cloud backup stays disabled.
+- Quest data is private user data. It lives only in local app storage or user-imported/exported JSON files; Android cloud backup stays disabled. The app may prompt users to keep app data on uninstall and can write optional backups to a user-picked folder.
 - The stable Android package/application id is `com.paruchan.questlog`; do not change it casually because sideloaded updates depend on package and signing continuity.
 - Canonical paruchan reference: `/home/bee/Downloads/paruchan.jpg`. Paruchans are soft white plush blobs with rounded cat ears, blue embroidered eyes, a pink nose, and pink cheek/whisker stripes. Do not draw them as generic fantasy cats, do not add smiles, and do not add separate arms, paws, or feet.
 
@@ -45,7 +45,7 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 ## Import, Export, Restore
 
 - Quest-pack import uses Android's system file picker and accepts JSON arrays or objects with a `quests` array.
-- The Files screen keeps manual quest-pack import, full backup export, and backup restore. Do not restore the in-app quest-pack maker or built-in starter-pack button unless explicitly requested.
+- The Files screen keeps manual quest-pack import, full backup export, backup restore, and optional user-picked folder backups. Do not restore the in-app quest-pack maker or built-in starter-pack button unless explicitly requested.
 - Quest-pack import makes the imported pack the current open quest set.
 - Existing quests that are not present in the imported pack are archived without adding completions or awarding XP.
 - If an imported quest has `id`, update by `id`.
@@ -61,6 +61,7 @@ This repo is the Android MVP for Paruchan Quest Log, a private two-person quest 
 - Full backup restore replaces the whole state only after user confirmation.
 - Backups include `levels` so future custom curves can be edited/imported without a v1 level designer UI.
 - Automatic daily local backups are private app files under `filesDir/questlog-backups/`; keep only the newest 10 dated `questlog-YYYY-MM-DD.json` snapshots.
+- Optional folder backups use Android's folder picker, persist the selected tree permission, write `paruchan-quest-log-latest.json`, and keep the newest 10 dated `paruchan-quest-log-YYYY-MM-DD.json` files. Delete only those dated app-created backup filenames during pruning.
 
 ## Updater And Release Assumptions
 

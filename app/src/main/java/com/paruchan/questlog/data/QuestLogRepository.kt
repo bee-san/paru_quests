@@ -67,8 +67,12 @@ class QuestLogRepository(
 
     @Synchronized
     fun exportBackup(): String {
-        val state = load().copy(exportedAt = Instant.now(clock).toString())
-        return codec.encode(state)
+        return encodeBackup(load())
+    }
+
+    @Synchronized
+    fun encodeBackup(state: QuestLogState): String {
+        return codec.encode(state.copy(exportedAt = Instant.now(clock).toString()))
     }
 
     @Synchronized

@@ -145,6 +145,7 @@ fun ParuchanQuestLogApp(
     onImportQuestPack: () -> Unit,
     onExportBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
+    onChooseBackupFolder: () -> Unit,
     onEnableQuestNotifications: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -194,7 +195,7 @@ fun ParuchanQuestLogApp(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             bottomBar = {
                 NavigationBar(containerColor = DeepPlum, tonalElevation = 0.dp) {
-                    Screen.entries.forEach { item ->
+                    Screen.entries.filter { it.showInBottomNav }.forEach { item ->
                         NavigationBarItem(
                             selected = screen == item,
                             onClick = { screen = item },
@@ -241,6 +242,7 @@ fun ParuchanQuestLogApp(
                                 canComplete = viewModel::canComplete,
                                 progressFor = viewModel::progressFor,
                                 onComplete = { questId, amount -> viewModel.completeQuest(questId, amount) },
+                                onShowHistory = { screen = Screen.History },
                                 onShowFiles = { screen = Screen.Files },
                                 onShowSettings = { screen = Screen.Settings },
                             )
@@ -251,9 +253,14 @@ fun ParuchanQuestLogApp(
                             )
 
                             Screen.Files -> ImportExportScreen(
+                                userBackupFolderEnabled = viewModel.userBackupFolderEnabled,
+                                userBackupInProgress = viewModel.userBackupInProgress,
                                 onImportQuestPack = onImportQuestPack,
                                 onExportBackup = onExportBackup,
                                 onRestoreBackup = onRestoreBackup,
+                                onChooseBackupFolder = onChooseBackupFolder,
+                                onBackupNow = viewModel::backupNow,
+                                onClearBackupFolder = viewModel::clearBackupFolder,
                             )
 
                             Screen.Settings -> SettingsScreen(
@@ -262,7 +269,7 @@ fun ParuchanQuestLogApp(
                                 sharedPackPasswordSaved = viewModel.sharedPackPasswordSaved,
                                 questNotificationSettings = viewModel.questNotificationSettings,
                                 onCheckForUpdate = { viewModel.checkForUpdate(context) },
-                                onExportBackup = onExportBackup,
+                                onShowFiles = { screen = Screen.Files },
                                 onQuestNotificationTimeChange = viewModel::updateQuestNotificationTime,
                                 onEnableQuestNotifications = onEnableQuestNotifications,
                                 onDisableQuestNotifications = viewModel::disableQuestNotifications,
@@ -474,6 +481,7 @@ private fun DashboardScreen(
     canComplete: (Quest) -> Boolean,
     progressFor: (Quest) -> QuestProgress,
     onComplete: (String, Int) -> Unit,
+    onShowHistory: () -> Unit,
     onShowFiles: () -> Unit,
     onShowSettings: () -> Unit,
 ) {
@@ -548,6 +556,7 @@ private fun DashboardScreen(
         item {
             SectionHeader("Quick Session")
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                QuickAction("Log", Icons.Outlined.History, onShowHistory, Modifier.weight(1f))
                 QuickAction("Files", Icons.Outlined.ImportExport, onShowFiles, Modifier.weight(1f))
                 QuickAction("Update", Icons.Outlined.SystemUpdateAlt, onShowSettings, Modifier.weight(1f))
             }
@@ -940,9 +949,14 @@ private fun HistoryScreen(
 
 @Composable
 private fun ImportExportScreen(
+    userBackupFolderEnabled: Boolean,
+    userBackupInProgress: Boolean,
     onImportQuestPack: () -> Unit,
     onExportBackup: () -> Unit,
     onRestoreBackup: () -> Unit,
+    onChooseBackupFolder: () -> Unit,
+    onBackupNow: () -> Unit,
+    onClearBackupFolder: () -> Unit,
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 18.dp)) {
         item {
@@ -976,6 +990,96 @@ private fun ImportExportScreen(
                 detail = "Replace this device's quest log",
                 onClick = onRestoreBackup,
             )
+        }
+        item {
+            UserBackupFolderCard(
+                enabled = userBackupFolderEnabled,
+                inProgress = userBackupInProgress,
+                onChooseBackupFolder = onChooseBackupFolder,
+                onBackupNow = onBackupNow,
+                onClearBackupFolder = onClearBackupFolder,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UserBackupFolderCard(
+    enabled: Boolean,
+    inProgress: Boolean,
+    onChooseBackupFolder: () -> Unit,
+    onBackupNow: () -> Unit,
+    onClearBackupFolder: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
+        colors = CardDefaults.cardColors(containerColor = Parchment),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.FileDownload, contentDescription = null, tint = Plum, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    DisplayText("Folder backups", 24.sp, Ink, FontWeight.Bold, maxLines = 1)
+                    Text(
+                        if (enabled) {
+                            "Saving latest plus 10 daily files"
+                        } else {
+                            "Choose a folder that survives uninstall"
+                        },
+                        color = MutedInk,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+
+            Button(
+                onClick = onChooseBackupFolder,
+                enabled = !inProgress,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
+                border = BorderStroke(1.dp, Gold),
+            ) {
+                Icon(Icons.Outlined.ImportExport, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (enabled) "Change folder" else "Choose folder", maxLines = 1)
+            }
+
+            if (enabled) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = onBackupNow,
+                        enabled = !inProgress,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = GoldDeep, contentColor = Color.White),
+                    ) {
+                        if (inProgress) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                        } else {
+                            Icon(Icons.Outlined.FileDownload, contentDescription = null, modifier = Modifier.size(20.dp))
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Text("Backup now", maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = onClearBackupFolder,
+                        enabled = !inProgress,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Plum.copy(alpha = 0.42f)),
+                    ) {
+                        Text("Turn off", maxLines = 1, color = Plum)
+                    }
+                }
+            }
         }
     }
 }
@@ -1011,7 +1115,7 @@ private fun SettingsScreen(
     sharedPackPasswordSaved: Boolean,
     questNotificationSettings: QuestNotificationSettings,
     onCheckForUpdate: () -> Unit,
-    onExportBackup: () -> Unit,
+    onShowFiles: () -> Unit,
     onQuestNotificationTimeChange: (Int, Int) -> Unit,
     onEnableQuestNotifications: () -> Unit,
     onDisableQuestNotifications: () -> Unit,
@@ -1066,10 +1170,10 @@ private fun SettingsScreen(
         }
         item {
             OrnateActionButton(
-                icon = Icons.Outlined.FileDownload,
-                title = "Export backup",
-                detail = "Save quests, completions, and levels",
-                onClick = onExportBackup,
+                icon = Icons.Outlined.ImportExport,
+                title = "Files",
+                detail = "Import quest packs, export backups, and restore",
+                onClick = onShowFiles,
             )
         }
         item {
@@ -1459,9 +1563,10 @@ private enum class Screen(
     val label: String,
     val title: String,
     val icon: ImageVector,
+    val showInBottomNav: Boolean = false,
 ) {
-    Home("Home", "Paruchan", Icons.Outlined.Home),
+    Home("Home", "Paruchan", Icons.Outlined.Home, showInBottomNav = true),
     History("Log", "Quest Log", Icons.Outlined.History),
     Files("Files", "Library", Icons.Outlined.ImportExport),
-    Settings("Prefs", "Settings", Icons.Outlined.Settings),
+    Settings("Prefs", "Settings", Icons.Outlined.Settings, showInBottomNav = true),
 }
