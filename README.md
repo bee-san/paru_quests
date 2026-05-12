@@ -6,7 +6,7 @@ The app stores all quest data locally in `filesDir/questlog.json`. Android cloud
 
 The Files screen includes one bundled starter pack: a single `Thank you paruchan` quest worth `5000 XP`. Importing any quest pack makes that pack the current open quest set: older quests are archived without adding completions or XP, while matching quest IDs update in place.
 
-Settings includes daily quest reminders. Reminder notifications are local-only and are posted only when the quest log still has uncompleted available quests.
+Settings includes backup export and daily quest reminders. Reminder notifications are local-only and are posted only when the quest log still has uncompleted available quests.
 
 ## Quest Types
 

@@ -279,6 +279,7 @@ fun ParuchanQuestLogApp(
                                 sharedPackPasswordSaved = viewModel.sharedPackPasswordSaved,
                                 questNotificationSettings = viewModel.questNotificationSettings,
                                 onCheckForUpdate = { viewModel.checkForUpdate(context) },
+                                onExportBackup = onExportBackup,
                                 onQuestNotificationTimeChange = viewModel::updateQuestNotificationTime,
                                 onEnableQuestNotifications = onEnableQuestNotifications,
                                 onDisableQuestNotifications = viewModel::disableQuestNotifications,
@@ -1291,6 +1292,7 @@ private fun SettingsScreen(
     sharedPackPasswordSaved: Boolean,
     questNotificationSettings: QuestNotificationSettings,
     onCheckForUpdate: () -> Unit,
+    onExportBackup: () -> Unit,
     onQuestNotificationTimeChange: (Int, Int) -> Unit,
     onEnableQuestNotifications: () -> Unit,
     onDisableQuestNotifications: () -> Unit,
@@ -1342,6 +1344,14 @@ private fun SettingsScreen(
                 Spacer(Modifier.width(10.dp))
                 DisplayText("Check for update", 24.sp, Gold, FontWeight.Bold, maxLines = 2, textAlign = TextAlign.Center)
             }
+        }
+        item {
+            OrnateActionButton(
+                icon = Icons.Outlined.FileDownload,
+                title = "Export backup",
+                detail = "Save quests, completions, and levels",
+                onClick = onExportBackup,
+            )
         }
         item {
             QuestReminderSettingsCard(
