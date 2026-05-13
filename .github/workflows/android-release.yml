@@ -26,7 +26,7 @@ jobs:
           release_tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           version_name="$(grep -E 'versionName = "' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')"
           expected_tag="v${version_name}"
-          if [ "$release_tag" != "$expected_tag" ]; then
+          if [ "$release_tag" != "$expected_tag" ] && [[ "$release_tag" != ${expected_tag}-* ]]; then
             echo "Release tag $release_tag does not match app version $expected_tag." >&2
             exit 1
           fi
@@ -78,6 +78,7 @@ jobs:
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          prerelease: ${{ contains((github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name), '-') }}
           files: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/apk/release/*.sha256
