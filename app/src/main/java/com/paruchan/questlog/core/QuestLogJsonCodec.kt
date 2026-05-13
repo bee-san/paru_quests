@@ -16,11 +16,14 @@ class QuestLogJsonCodec(
     fun encode(state: QuestLogState): String = gson.toJson(normalize(state))
 
     fun decodeState(json: String): QuestLogState {
+        val root = parseRootElement(json)
+        require(!root.isJsonNull) { "Backup is empty" }
+
         val parsed = try {
-            gson.fromJson(json, QuestLogState::class.java)
+            gson.fromJson(root, QuestLogState::class.java)
         } catch (error: JsonParseException) {
             throw IllegalArgumentException("Backup is not valid JSON", error)
-        } ?: throw IllegalArgumentException("Backup is empty")
+        }
 
         return normalize(parsed)
     }
@@ -108,12 +111,16 @@ class QuestLogJsonCodec(
         )
     }
 
-    private fun parseRootObject(json: String): JsonObject {
-        val root: JsonElement = try {
+    private fun parseRootElement(json: String): JsonElement {
+        return try {
             JsonParser.parseString(json)
         } catch (error: JsonParseException) {
             throw IllegalArgumentException("Backup is not valid JSON", error)
         }
+    }
+
+    private fun parseRootObject(json: String): JsonObject {
+        val root = parseRootElement(json)
         require(root.isJsonObject) { "Backup must be a JSON object" }
         return root.asJsonObject
     }

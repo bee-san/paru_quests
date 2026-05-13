@@ -250,7 +250,7 @@ class QuestLogRepository(
         } catch (error: FileAlreadyExistsException) {
             null
         } finally {
-            temp.delete()
+            temp.deleteOrSchedule()
             pruneBackups()
         }
     }
@@ -263,7 +263,7 @@ class QuestLogRepository(
     private fun pruneBackups() {
         backupFiles()
             .drop(backupRetentionCount.coerceAtLeast(1))
-            .forEach { it.delete() }
+            .forEach { it.deleteOrSchedule() }
     }
 
     private fun backupFiles(): List<File> {
@@ -302,3 +302,9 @@ const val KEY_LEGACY_JSON_MIGRATED = "legacy_json_migrated"
 
 private fun QuestLogState.hasUserData(): Boolean =
     quests.isNotEmpty() || completions.isNotEmpty() || journalEntries.isNotEmpty()
+
+private fun File.deleteOrSchedule() {
+    if (exists() && !delete()) {
+        deleteOnExit()
+    }
+}

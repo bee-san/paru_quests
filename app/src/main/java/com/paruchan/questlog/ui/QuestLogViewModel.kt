@@ -283,7 +283,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             loadJob.join()
             if (!userBackupFolderEnabled) {
-                message = "Choose a backup folder first"
+                message = CHOOSE_BACKUP_FOLDER_FIRST
                 return@launch
             }
             writeUserBackup(state, announceSuccess = true)
@@ -331,31 +331,31 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             try {
                 message = "Checking for update"
-                runCatching {
-                    when (val result = updater.checkLatest()) {
-                        is UpdateCheckResult.Available -> {
-                            message = "Downloading ${result.candidate.release.tagName}"
-                            val apk = updater.download(result.candidate, File(context.cacheDir, "updates"))
-                            when (updater.install(context, apk)) {
-                                is InstallResult.Started -> "Installer opened"
-                                InstallResult.NeedsUnknownSourcesPermission -> "Allow installs from this app, then check again"
-                            }
-                        }
-
-                        is UpdateCheckResult.NoInstallableAsset ->
-                            "Release ${result.latestVersion} has no APK asset"
-
-                        is UpdateCheckResult.UpToDate ->
-                            "Already on ${result.currentVersion}"
-                    }
-                }.onSuccess { updateMessage ->
-                    message = updateMessage
-                }.onFailure { error ->
-                    message = error.message ?: "Update check failed"
-                }
+                message = runCatching { updateMessage(context) }
+                    .getOrElse { error -> error.message ?: "Update check failed" }
             } finally {
                 updateInProgress = false
             }
+        }
+    }
+
+    private suspend fun updateMessage(context: Context): String {
+        return when (val result = updater.checkLatest()) {
+            is UpdateCheckResult.Available -> installAvailableUpdate(context, result)
+            is UpdateCheckResult.NoInstallableAsset -> "Release ${result.latestVersion} has no APK asset"
+            is UpdateCheckResult.UpToDate -> "Already on ${result.currentVersion}"
+        }
+    }
+
+    private suspend fun installAvailableUpdate(
+        context: Context,
+        result: UpdateCheckResult.Available,
+    ): String {
+        message = "Downloading ${result.candidate.release.tagName}"
+        val apk = updater.download(result.candidate, File(context.cacheDir, "updates"))
+        return when (updater.install(context, apk)) {
+            is InstallResult.Started -> "Installer opened"
+            InstallResult.NeedsUnknownSourcesPermission -> "Allow installs from this app, then check again"
         }
     }
 
@@ -441,7 +441,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         if (!userBackupFolderStore.hasFolder()) {
             userBackupFolderEnabled = false
             if (announceSuccess) {
-                message = "Choose a backup folder first"
+                message = CHOOSE_BACKUP_FOLDER_FIRST
             }
             return
         }
@@ -455,7 +455,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
                 userBackupFolderEnabled = userBackupFolderStore.hasFolder()
                 if (announceSuccess) {
                     message = when (result) {
-                        UserBackupWriteResult.Disabled -> "Choose a backup folder first"
+                        UserBackupWriteResult.Disabled -> CHOOSE_BACKUP_FOLDER_FIRST
                         is UserBackupWriteResult.Saved -> "Folder backup saved"
                     }
                 }
@@ -496,3 +496,5 @@ data class DiaryUiState(
     val dailyReflection: String? = null,
     val saving: Boolean = false,
 )
+
+private const val CHOOSE_BACKUP_FOLDER_FIRST = "Choose a backup folder first"

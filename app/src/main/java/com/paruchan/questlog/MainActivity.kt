@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
         uri?.let { viewModel.importQuestPack(this, it) }
     }
 
-    private val exportBackup = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+    private val exportBackup = registerForActivityResult(ActivityResultContracts.CreateDocument(JSON_MIME_TYPE)) { uri: Uri? ->
         uri?.let { viewModel.exportBackup(this, it) }
     }
 
@@ -45,9 +45,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             ParuchanQuestLogApp(
                 viewModel = viewModel,
-                onImportQuestPack = { importQuestPack.launch(arrayOf("application/json", "text/*")) },
+                onImportQuestPack = { importQuestPack.launch(arrayOf(JSON_MIME_TYPE, TEXT_MIME_TYPE)) },
                 onExportBackup = { exportBackup.launch("paruchan-quest-log-backup.json") },
-                onRestoreBackup = { restoreBackup.launch(arrayOf("application/json", "text/*")) },
+                onRestoreBackup = { restoreBackup.launch(arrayOf(JSON_MIME_TYPE, TEXT_MIME_TYPE)) },
                 onChooseBackupFolder = { chooseBackupFolder.launch(null) },
                 onEnableQuestNotifications = ::enableQuestNotifications,
             )
@@ -65,3 +65,6 @@ class MainActivity : ComponentActivity() {
         viewModel.enableQuestNotifications()
     }
 }
+
+private const val JSON_MIME_TYPE = "application/json"
+private const val TEXT_MIME_TYPE = "text/*"

@@ -162,10 +162,12 @@ class QuestPackImporter(
                 ?: timer?.int("minutes")
                 ?: timer?.int("timerMinutes")
             )?.coerceIn(1, 24 * 60)
-        val goalTarget = when (goalType) {
-            QuestGoalType.Timer -> (explicitGoalTarget ?: timerMinutes ?: 1).coerceAtLeast(1)
-            else -> (explicitGoalTarget ?: 1).coerceAtLeast(1)
+        val goalTargetSource = when {
+            explicitGoalTarget != null -> explicitGoalTarget
+            goalType == QuestGoalType.Timer && timerMinutes != null -> timerMinutes
+            else -> 1
         }
+        val goalTarget = goalTargetSource.coerceAtLeast(1)
         val goalUnit = obj.string("goalUnit")
             .ifBlank { obj.string("unit") }
             .ifBlank { goal?.string("unit").orEmpty() }
@@ -229,25 +231,16 @@ class QuestPackImporter(
         )
     }
 
-    private fun legacyCategoryQuestId(
-        title: String,
-        category: String,
-        cadence: QuestCadence,
-        goalType: QuestGoalType,
-        goalTarget: Int,
-        goalUnit: String,
-        timerMinutes: Int?,
-        icon: String,
-    ): String {
+    private fun legacyCategoryQuestId(quest: Quest, cadence: QuestCadence, goalType: QuestGoalType): String {
         return stableQuestIdFromParts(
-            title,
-            category,
+            quest.title,
+            quest.category,
             cadence.wireName,
             goalType.wireName,
-            goalTarget.toString(),
-            goalUnit,
-            timerMinutes?.toString().orEmpty(),
-            icon,
+            quest.goalTarget.coerceAtLeast(1).toString(),
+            quest.goalUnit,
+            if (goalType == QuestGoalType.Timer) "" else quest.timerMinutes?.toString().orEmpty(),
+            quest.icon,
         )
     }
 
@@ -328,14 +321,9 @@ class QuestPackImporter(
         return setOf(
             currentStableIdFor(quest),
             legacyCategoryQuestId(
-                title = quest.title,
-                category = quest.category,
+                quest = quest,
                 cadence = cadence,
                 goalType = goalType,
-                goalTarget = quest.goalTarget.coerceAtLeast(1),
-                goalUnit = quest.goalUnit,
-                timerMinutes = if (goalType == QuestGoalType.Timer) null else quest.timerMinutes,
-                icon = quest.icon,
             ),
             legacyGoalQuestId(quest),
             legacyOriginalQuestId(quest),
