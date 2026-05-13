@@ -127,6 +127,10 @@ sdk.dir=/home/bee/Documents/src/github/thaiwrite/.android-sdk
 
 - Pull-request and `main` CI run unit tests, Android lint, and debug APK assembly as separate jobs. The unit-test and lint jobs upload their reports, and the debug build uploads the APK artifact.
 - CodeQL runs for Java/Kotlin on pull requests, pushes to `main`, weekly schedule, and manual dispatch. It uses the `security-extended` and `security-and-quality` query suites and manually builds `testDebugUnitTest assembleDebug` so Android/Kotlin sources are captured.
+- The CodeQL workflow job passing is not the whole code-scanning result. Also check the GitHub Advanced Security `CodeQL` check run for new alerts; it can report alerts even when the Actions workflow succeeds.
+- SonarCloud is enabled externally through the SonarQubeCloud GitHub App, not repo-local Sonar workflow files or `sonar-project.properties`. Do not assume Sonar is absent just because no Sonar config exists in git.
+- A SonarCloud Quality Gate can pass while code smells remain. For Sonar cleanup, query the SonarCloud API and verify the issue count, for example `https://sonarcloud.io/api/issues/search?componentKeys=bee-san_paru_quests&pullRequest=<pr>&issueStatuses=OPEN,CONFIRMED&ps=500`.
+- If asked to fix all Sonar issues, query the project-wide backlog with `componentKeys=bee-san_paru_quests&issueStatuses=OPEN,CONFIRMED&ps=500`, fix issues in source, and avoid accepting/suppressing issues unless explicitly requested. Project-wide `main` results only refresh after the fix is merged and Sonar analyzes `main`.
 - Workflow: `.github/workflows/android-release.yml`.
 - Trigger: tags matching `v*`.
 - CI installs Android SDK platform/build-tools 36, builds `assembleRelease`, writes one `.sha256` file per APK, and publishes assets to the GitHub Release.
