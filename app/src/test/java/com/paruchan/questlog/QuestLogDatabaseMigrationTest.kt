@@ -58,6 +58,37 @@ class QuestLogDatabaseMigrationTest {
     }
 
     @Test
+    fun `json migration ignores legacy file after metadata says migrated`() {
+        val legacyFile = File(temp.root, "questlog.json")
+        legacyFile.writeText(
+            """
+            {
+              "schemaVersion": 1,
+              "quests": [{"id":"q1","title":"Legacy quest","xp":15}],
+              "completions": [],
+              "levels": []
+            }
+            """.trimIndent(),
+        )
+        val database = testParuchanDatabase()
+        QuestLogRepository(
+            database = database,
+            legacyStateFile = legacyFile,
+            backupDirectory = File(temp.root, "questlog-backups"),
+        ).load()
+
+        legacyFile.writeText("{bad json")
+        val loadedAfterRestart = QuestLogRepository(
+            database = database,
+            legacyStateFile = legacyFile,
+            backupDirectory = File(temp.root, "questlog-backups"),
+        ).load()
+
+        assertEquals("Legacy quest", loadedAfterRestart.quests.single().title)
+        assertEquals("true", database.questLogDao().metadataValue(KEY_LEGACY_JSON_MIGRATED))
+    }
+
+    @Test
     fun `failed migration does not mark migration complete`() {
         val legacyFile = File(temp.root, "questlog.json")
         legacyFile.writeText("{bad json")

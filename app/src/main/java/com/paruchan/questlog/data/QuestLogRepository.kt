@@ -162,7 +162,10 @@ class QuestLogRepository(
     }
 
     private fun ensureInitialized() {
-        if (initialized && database.questLogDao().metadataValue(KEY_LEGACY_JSON_MIGRATED) == "true") return
+        if (database.questLogDao().metadataValue(KEY_LEGACY_JSON_MIGRATED) == "true") {
+            initialized = true
+            return
+        }
 
         val legacyState = legacyStateFile
             ?.takeIf { it.exists() && it.length() > 0L }
