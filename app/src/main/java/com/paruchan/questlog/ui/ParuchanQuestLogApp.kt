@@ -108,6 +108,7 @@ import androidx.compose.ui.unit.sp
 import com.paruchan.questlog.R
 import com.paruchan.questlog.BuildConfig
 import com.paruchan.questlog.core.Completion
+import com.paruchan.questlog.core.JournalEntry
 import com.paruchan.questlog.core.LevelProgress
 import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestCadence
@@ -250,6 +251,11 @@ fun ParuchanQuestLogApp(
                             Screen.History -> HistoryScreen(
                                 completions = viewModel.state.completions,
                                 quests = viewModel.state.quests,
+                            )
+
+                            Screen.Diary -> DiaryScreen(
+                                diaryUiState = viewModel.diaryUiState,
+                                onSave = viewModel::saveJournalEntry,
                             )
 
                             Screen.Files -> ImportExportScreen(
@@ -948,6 +954,203 @@ private fun HistoryScreen(
 }
 
 @Composable
+private fun DiaryScreen(
+    diaryUiState: DiaryUiState,
+    onSave: (String, String, String) -> Unit,
+) {
+    val todayEntry = diaryUiState.todayEntry
+    var happyText by rememberSaveable(todayEntry.localDate, "happyText") { mutableStateOf(todayEntry.happyText) }
+    var gratefulText by rememberSaveable(todayEntry.localDate, "gratefulText") { mutableStateOf(todayEntry.gratefulText) }
+    var favoriteMemoryText by rememberSaveable(todayEntry.localDate, "favoriteMemoryText") {
+        mutableStateOf(todayEntry.favoriteMemoryText)
+    }
+
+    LaunchedEffect(todayEntry.localDate, todayEntry.updatedAt) {
+        happyText = todayEntry.happyText
+        gratefulText = todayEntry.gratefulText
+        favoriteMemoryText = todayEntry.favoriteMemoryText
+    }
+
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 18.dp)) {
+        item {
+            SectionHeader("Daily Diary")
+            ReflectionCard(diaryUiState.dailyReflection)
+        }
+        item {
+            TodayDiaryCard(
+                entry = todayEntry,
+                happyText = happyText,
+                gratefulText = gratefulText,
+                favoriteMemoryText = favoriteMemoryText,
+                saving = diaryUiState.saving,
+                onHappyChange = { happyText = it },
+                onGratefulChange = { gratefulText = it },
+                onFavoriteMemoryChange = { favoriteMemoryText = it },
+                onSave = { onSave(happyText, gratefulText, favoriteMemoryText) },
+            )
+        }
+        item {
+            SectionHeader("Recent Entries")
+        }
+        if (diaryUiState.recentEntries.isEmpty()) {
+            item { EmptyStateCard("No diary entries yet.") }
+        } else {
+            items(diaryUiState.recentEntries, key = { it.id.ifBlank { it.localDate } }) { entry ->
+                JournalEntryCard(entry)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReflectionCard(reflection: String?) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
+        colors = CardDefaults.cardColors(containerColor = Parchment),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DisplayText("Today remembers", 22.sp, Ink, FontWeight.Bold, maxLines = 2)
+            Text(
+                reflection ?: "Paruchan will remember something sweet here after a few diary days.",
+                color = if (reflection == null) MutedInk else Ink,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TodayDiaryCard(
+    entry: JournalEntry,
+    happyText: String,
+    gratefulText: String,
+    favoriteMemoryText: String,
+    saving: Boolean,
+    onHappyChange: (String) -> Unit,
+    onGratefulChange: (String) -> Unit,
+    onFavoriteMemoryChange: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    val hasAnyDraft = happyText.isNotBlank() || gratefulText.isNotBlank() || favoriteMemoryText.isNotBlank()
+    val completeDraft = happyText.trim().isNotBlank() &&
+        gratefulText.trim().isNotBlank() &&
+        favoriteMemoryText.trim().isNotBlank()
+    val rewardStatus = when {
+        entry.xpAwarded == 10 -> "Diary reward claimed: +10 XP"
+        completeDraft -> "Diary reward waiting"
+        hasAnyDraft -> "Saved as a tiny draft"
+        else -> "Diary reward waiting"
+    }
+
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
+        colors = CardDefaults.cardColors(containerColor = Parchment),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            DisplayText("Today's entry", 24.sp, Ink, FontWeight.Bold, maxLines = 2)
+            DiaryTextField(
+                value = happyText,
+                onValueChange = onHappyChange,
+                label = "One thing that made Paruchan happy today",
+            )
+            DiaryTextField(
+                value = gratefulText,
+                onValueChange = onGratefulChange,
+                label = "One thing Paruchan is grateful for today",
+            )
+            DiaryTextField(
+                value = favoriteMemoryText,
+                onValueChange = onFavoriteMemoryChange,
+                label = "Tell me one of your favourite memories",
+            )
+            Text(rewardStatus, color = Plum, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Button(
+                onClick = onSave,
+                enabled = !saving && (hasAnyDraft || entry.createdAt.isNotBlank()),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
+                border = BorderStroke(1.dp, Gold),
+            ) {
+                if (saving) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Gold)
+                } else {
+                    Icon(Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(if (entry.createdAt.isBlank()) "Save diary" else "Update diary", maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiaryTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 96.dp),
+        label = { Text(label) },
+        minLines = 2,
+        maxLines = 4,
+        shape = RoundedCornerShape(8.dp),
+    )
+}
+
+@Composable
+private fun JournalEntryCard(entry: JournalEntry) {
+    val preview = entry.favoriteMemoryText.ifBlank { entry.happyText }.ifBlank { entry.gratefulText }
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.25f)),
+        colors = CardDefaults.cardColors(containerColor = Parchment),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            CircleQuestIcon(modifier = Modifier.size(48.dp), icon = "star")
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DisplayText(entry.localDate, 20.sp, Ink, FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+                    if (entry.xpAwarded > 0) {
+                        Text("+${entry.xpAwarded} XP", color = Plum, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Text(
+                    preview.ifBlank { "Tiny draft" },
+                    color = MutedInk,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ImportExportScreen(
     userBackupFolderEnabled: Boolean,
     userBackupInProgress: Boolean,
@@ -979,7 +1182,7 @@ private fun ImportExportScreen(
             OrnateActionButton(
                 icon = Icons.Outlined.FileDownload,
                 title = "Export backup",
-                detail = "Save quests, completions, and levels",
+                detail = "Save quests, completions, levels, and diary",
                 onClick = onExportBackup,
             )
         }
@@ -1566,7 +1769,8 @@ private enum class Screen(
     val showInBottomNav: Boolean = false,
 ) {
     Home("Home", "Paruchan", Icons.Outlined.Home, showInBottomNav = true),
-    History("Log", "Quest Log", Icons.Outlined.History),
-    Files("Files", "Library", Icons.Outlined.ImportExport),
+    History("Log", "Quest Log", Icons.Outlined.History, showInBottomNav = true),
+    Diary("Diary", "Diary", Icons.Outlined.Star, showInBottomNav = true),
+    Files("Files", "Library", Icons.Outlined.ImportExport, showInBottomNav = true),
     Settings("Prefs", "Settings", Icons.Outlined.Settings, showInBottomNav = true),
 }

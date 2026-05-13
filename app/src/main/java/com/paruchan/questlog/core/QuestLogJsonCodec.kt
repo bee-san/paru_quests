@@ -27,10 +27,14 @@ class QuestLogJsonCodec(
 
     fun decodeBackup(json: String): QuestLogState {
         val root = parseRootObject(json)
-        require(root.int("schemaVersion") == 1) { "Backup has an unsupported schema version" }
+        val schemaVersion = root.int("schemaVersion")
+        require(schemaVersion == 1 || schemaVersion == 2) { "Backup has an unsupported schema version" }
         require(root["quests"]?.isJsonArray == true) { "Backup is missing quests" }
         require(root["completions"]?.isJsonArray == true) { "Backup is missing completions" }
         require(root["levels"]?.isJsonArray == true) { "Backup is missing levels" }
+        if (schemaVersion == 2) {
+            require(root["journalEntries"]?.isJsonArray == true) { "Backup is missing journalEntries" }
+        }
         require(root.string("exportedAt").isNotBlank()) { "Backup is missing exportedAt" }
         return decodeState(json)
     }
@@ -78,11 +82,29 @@ class QuestLogJsonCodec(
             }
             .distinctBy { it.id }
 
+        val journalEntries = state.journalEntries.orEmpty()
+            .filter { it.localDate.isNotBlank() }
+            .map { entry ->
+                val id = entry.id.trim().ifBlank { "journal-${entry.localDate.trim()}" }
+                entry.copy(
+                    id = id,
+                    localDate = entry.localDate.trim(),
+                    happyText = entry.happyText.trim(),
+                    gratefulText = entry.gratefulText.trim(),
+                    favoriteMemoryText = entry.favoriteMemoryText.trim(),
+                    createdAt = entry.createdAt.trim(),
+                    updatedAt = entry.updatedAt.trim(),
+                    xpAwarded = if (entry.xpAwarded >= 10) 10 else 0,
+                )
+            }
+            .distinctBy { it.localDate }
+
         return state.copy(
-            schemaVersion = 1,
+            schemaVersion = 2,
             quests = quests,
             completions = completions,
             levels = levels,
+            journalEntries = journalEntries,
         )
     }
 

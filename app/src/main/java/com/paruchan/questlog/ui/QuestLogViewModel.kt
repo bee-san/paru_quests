@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.paruchan.questlog.BuildConfig
+import com.paruchan.questlog.core.JournalEntry
 import com.paruchan.questlog.core.LevelProgress
 import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestGoalType
@@ -31,9 +32,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.LocalDate
 
 class QuestLogViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = QuestLogRepository(File(application.filesDir, "questlog.json"))
+    private val repository = QuestLogRepository.create(application)
     private val sharedPackRepository = BundledSharedPackRepository(application, repository)
     private val sharedPackSecretStore = SharedPackSecretStore(application)
     private val userBackupFolderStore = UserBackupFolderStore(application)
@@ -74,8 +76,18 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
     var questNotificationSettings: QuestNotificationSettings by mutableStateOf(questNotificationPreferences.load())
         private set
 
+    var diaryUiState: DiaryUiState by mutableStateOf(DiaryUiState())
+        private set
+
     private val loadJob = viewModelScope.launch {
-        state = withContext(Dispatchers.IO) { repository.load() }
+        runCatching {
+            withContext(Dispatchers.IO) { repository.load() }
+        }.onSuccess { loaded ->
+            state = loaded
+            refreshDiaryState()
+        }.onFailure { error ->
+            message = error.message ?: "Quest log load failed"
+        }
     }
 
     val progress: LevelProgress
@@ -158,6 +170,39 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun saveJournalEntry(happyText: String, gratefulText: String, favoriteMemoryText: String) {
+        if (diaryUiState.saving) return
+        viewModelScope.launch {
+            loadJob.join()
+            diaryUiState = diaryUiState.copy(saving = true)
+            val today = LocalDate.now()
+            val previousXp = state.journalEntries.firstOrNull { it.localDate == today.toString() }?.xpAwarded ?: 0
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val entry = repository.saveJournalEntry(
+                        happyText = happyText,
+                        gratefulText = gratefulText,
+                        favoriteMemoryText = favoriteMemoryText,
+                        localDate = today,
+                    )
+                    entry to repository.load()
+                }
+            }.onSuccess { (entry, nextState) ->
+                state = nextState
+                refreshDiaryState()
+                writeUserBackup(nextState, announceSuccess = false)
+                message = if (previousXp == 0 && entry.xpAwarded == 10) {
+                    "Diary saved for 10 XP"
+                } else {
+                    "Diary saved"
+                }
+            }.onFailure { error ->
+                message = error.message ?: "Diary save failed"
+            }
+            diaryUiState = diaryUiState.copy(saving = false)
+        }
+    }
+
     fun importQuestPack(context: Context, uri: Uri) {
         viewModelScope.launch {
             loadJob.join()
@@ -166,6 +211,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
                 withContext(Dispatchers.IO) { repository.importQuestPack(json) }
             }.onSuccess { result ->
                 state = result.state
+                refreshDiaryState()
                 message = result.summary
                 writeUserBackup(result.state, announceSuccess = false)
             }.onFailure { error ->
@@ -270,6 +316,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
                 withContext(Dispatchers.IO) { repository.restoreBackup(json) }
             }.onSuccess { restored ->
                 state = restored
+                refreshDiaryState()
                 message = "Backup restored"
                 writeUserBackup(restored, announceSuccess = false)
             }.onFailure { error ->
@@ -359,6 +406,7 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
                 }
 
                 state = result.state
+                refreshDiaryState()
                 if (result.changed) {
                     writeUserBackup(result.state, announceSuccess = false)
                 }
@@ -423,10 +471,28 @@ class QuestLogViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    private suspend fun refreshDiaryState() {
+        val today = LocalDate.now()
+        diaryUiState = withContext(Dispatchers.IO) {
+            DiaryUiState(
+                todayEntry = repository.journalEntryForDate(today),
+                recentEntries = repository.recentJournalEntries(limit = 8),
+                dailyReflection = repository.dailyReflectionForDate(today),
+            )
+        }
+    }
+
 }
 
 data class CompletionCelebration(
     val id: String,
     val questTitle: String,
     val xpAwarded: Int,
+)
+
+data class DiaryUiState(
+    val todayEntry: JournalEntry = JournalEntry(),
+    val recentEntries: List<JournalEntry> = emptyList(),
+    val dailyReflection: String? = null,
+    val saving: Boolean = false,
 )

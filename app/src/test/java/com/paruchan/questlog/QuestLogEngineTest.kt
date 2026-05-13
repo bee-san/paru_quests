@@ -2,6 +2,7 @@ package com.paruchan.questlog
 
 import com.paruchan.questlog.core.Completion
 import com.paruchan.questlog.core.DailyQuestMessages
+import com.paruchan.questlog.core.JournalEntry
 import com.paruchan.questlog.core.Level
 import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestLogJsonCodec
@@ -36,6 +37,20 @@ class QuestLogEngineTest {
         assertEquals(3550, progress.totalXp)
         assertEquals(7, progress.current.level)
         assertEquals("Visa Bard of Babsy", progress.current.title)
+    }
+
+    @Test
+    fun `total xp includes completion xp plus diary xp`() {
+        val engine = QuestLogEngine(clock = clock)
+        val state = QuestLogState(
+            completions = listOf(completion("a", 90)),
+            journalEntries = listOf(
+                JournalEntry(id = "journal-2026-05-05", localDate = "2026-05-05", xpAwarded = 10),
+            ),
+        )
+
+        assertEquals(100, engine.totalXp(state))
+        assertEquals(100, engine.levelProgress(state).totalXp)
     }
 
     @Test

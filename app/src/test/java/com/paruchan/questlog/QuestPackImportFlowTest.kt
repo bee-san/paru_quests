@@ -1,6 +1,7 @@
 package com.paruchan.questlog
 
-import com.paruchan.questlog.data.QuestLogRepository
+import com.paruchan.questlog.core.JournalEntry
+import com.paruchan.questlog.core.QuestLogState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -8,18 +9,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.io.File
 
+@RunWith(RobolectricTestRunner::class)
 class QuestPackImportFlowTest {
     @get:Rule
     val temp = TemporaryFolder()
 
     @Test
     fun `imports a full paruchan quest pack and persists every quest shape`() {
-        val repository = QuestLogRepository(File(temp.root, "questlog.json"))
+        val repository = testQuestLogRepository(temp.root, legacyStateFile = File(temp.root, "questlog.json"))
 
         val firstImport = repository.importQuestPack(fullParuchanPack())
-        val reloaded = QuestLogRepository(File(temp.root, "restored.json")).restoreBackup(repository.exportBackup())
+        val reloaded = testQuestLogRepository(temp.root, legacyStateFile = File(temp.root, "restored.json"))
+            .restoreBackup(repository.exportBackup())
 
         assertEquals(5, firstImport.imported)
         assertEquals(0, firstImport.updated)
@@ -78,7 +83,7 @@ class QuestPackImportFlowTest {
 
     @Test
     fun `reimporting a paruchan quest pack updates by id without duplicates`() {
-        val repository = QuestLogRepository(File(temp.root, "questlog.json"))
+        val repository = testQuestLogRepository(temp.root, legacyStateFile = File(temp.root, "questlog.json"))
 
         repository.importQuestPack(fullParuchanPack())
         val secondImport = repository.importQuestPack(
@@ -94,6 +99,24 @@ class QuestPackImportFlowTest {
         assertEquals(0, secondImport.skipped)
         assertEquals(5, reloaded.quests.size)
         assertEquals(175, reloaded.quests.first { it.id == "full-once" }.xp)
+    }
+
+    @Test
+    fun `quest pack import preserves journal entries`() {
+        val repository = testQuestLogRepository(temp.root, legacyStateFile = File(temp.root, "questlog.json"))
+        val journalEntry = JournalEntry(
+            id = "journal-2026-05-05",
+            localDate = "2026-05-05",
+            happyText = "Paruchan saw a tiny win.",
+            gratefulText = "Paruchan is grateful for tea.",
+            favoriteMemoryText = "A soft walk.",
+            xpAwarded = 10,
+        )
+        repository.save(QuestLogState(journalEntries = listOf(journalEntry)))
+
+        repository.importQuestPack(fullParuchanPack())
+
+        assertEquals(listOf(journalEntry), repository.load().journalEntries)
     }
 
     private fun fullParuchanPack(): String = """

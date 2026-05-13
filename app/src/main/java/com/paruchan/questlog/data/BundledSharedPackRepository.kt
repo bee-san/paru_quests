@@ -10,17 +10,18 @@ class BundledSharedPackRepository(
     private val questLogRepository: QuestLogRepository,
     private val importer: SharedPackImporter = SharedPackImporter(),
 ) {
-    private val prefs = context.getSharedPreferences("shared_pack_imports", Context.MODE_PRIVATE)
+    private val legacyPrefs = context.getSharedPreferences("shared_pack_imports", Context.MODE_PRIVATE)
 
     @Synchronized
     fun importBundled(password: String, commitOnErrors: Boolean = true): SharedPackMergeResult {
         val assets = readBundledAssets()
         val currentState = questLogRepository.load()
+        val importedMarkers = questLogRepository.importedSharedPackMarkers() + legacyImportedMarkers()
         val result = importer.mergeEncryptedPacks(
             state = currentState,
             assets = assets,
             password = password,
-            importedMarkers = prefs.getStringSet(KEY_IMPORTED_MARKERS, emptySet()).orEmpty(),
+            importedMarkers = importedMarkers,
         )
 
         val shouldCommit = result.errors.isEmpty() || commitOnErrors
@@ -28,10 +29,20 @@ class BundledSharedPackRepository(
             questLogRepository.save(result.state)
         }
         if (shouldCommit && result.newMarkers.isNotEmpty()) {
-            val markers = prefs.getStringSet(KEY_IMPORTED_MARKERS, emptySet()).orEmpty() + result.newMarkers
-            prefs.edit().putStringSet(KEY_IMPORTED_MARKERS, markers).apply()
+            questLogRepository.addImportedSharedPackMarkers(result.newMarkers)
         }
+        migrateLegacyMarkersIfNeeded(importedMarkers)
         return result
+    }
+
+    private fun legacyImportedMarkers(): Set<String> =
+        legacyPrefs.getStringSet(KEY_IMPORTED_MARKERS, emptySet()).orEmpty()
+
+    private fun migrateLegacyMarkersIfNeeded(markers: Set<String>) {
+        val legacyMarkers = legacyImportedMarkers()
+        if (legacyMarkers.isEmpty()) return
+        questLogRepository.addImportedSharedPackMarkers(markers)
+        legacyPrefs.edit().remove(KEY_IMPORTED_MARKERS).apply()
     }
 
     private fun readBundledAssets(): List<EncryptedSharedPackAsset> {
