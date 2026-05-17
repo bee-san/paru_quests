@@ -9,7 +9,8 @@ class QuestLogEngine(
     private val clock: Clock = Clock.systemDefaultZone(),
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
 ) {
-    fun totalXp(state: QuestLogState): Int = state.completions.sumOf { it.xpAwarded }
+    fun totalXp(state: QuestLogState): Int =
+        state.completions.sumOf { it.xpAwarded } + state.journalEntries.sumOf { it.xpAwarded }
 
     fun levelProgress(state: QuestLogState): LevelProgress {
         val levels = normalizedLevels(state.levels)

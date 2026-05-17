@@ -17,7 +17,8 @@ import com.paruchan.questlog.R
 import com.paruchan.questlog.core.DailyQuestMessages
 import com.paruchan.questlog.core.QuestLogEngine
 import com.paruchan.questlog.data.QuestLogRepository
-import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import java.time.LocalDate
 
 object QuestReminderNotifier {
@@ -27,7 +28,7 @@ object QuestReminderNotifier {
         val settings = QuestNotificationPreferences(appContext).load()
         if (!settings.enabled || !canPostNotifications(appContext)) return false
 
-        val state = QuestLogRepository(File(appContext.filesDir, "questlog.json")).load()
+        val state = runBlocking(Dispatchers.IO) { QuestLogRepository.create(appContext).load() }
         val quests = QuestLogEngine().reminderQuests(state)
         if (quests.isEmpty()) return false
 

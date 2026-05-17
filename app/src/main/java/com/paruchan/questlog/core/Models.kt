@@ -33,11 +33,23 @@ data class Level(
     var unlocks: List<String> = emptyList(),
 )
 
+data class JournalEntry(
+    var id: String = "",
+    var localDate: String = "",
+    var happyText: String = "",
+    var gratefulText: String = "",
+    var favoriteMemoryText: String = "",
+    var createdAt: String = "",
+    var updatedAt: String = "",
+    var xpAwarded: Int = 0,
+)
+
 data class QuestLogState(
-    var schemaVersion: Int = 1,
+    var schemaVersion: Int = 2,
     var quests: List<Quest> = emptyList(),
     var completions: List<Completion> = emptyList(),
     var levels: List<Level> = DefaultLevels.paruchan(),
+    var journalEntries: List<JournalEntry> = emptyList(),
     var exportedAt: String? = null,
 )
 

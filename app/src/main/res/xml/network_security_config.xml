@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">github.com</domain>
+        <pin-set expiration="2036-03-21">
+            <pin digest="SHA-256">ZSagvDzjltLkewXEBuDxIzpW/dpVw1Juvvmd0hhkzdY=</pin>
+            <pin digest="SHA-256">sLVjNUaFYfW7n6EtgBeEpjOlcnBdNPMrZDRF36iwBdE=</pin>
+            <pin digest="SHA-256">ICGRfpgmOUXIWcQ/HXPLQTkFPEFPoDyjvH7ohhQpjzs=</pin>
+        </pin-set>
+    </domain-config>
+
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">githubusercontent.com</domain>
+        <pin-set expiration="2027-03-12">
+            <pin digest="SHA-256">kZwN96eHtZftBWrOZUsd6cA4es80n3NzSk/XtYz2EqQ=</pin>
+            <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
+        </pin-set>
+    </domain-config>
+</network-security-config>

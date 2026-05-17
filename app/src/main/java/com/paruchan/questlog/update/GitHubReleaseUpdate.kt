@@ -13,7 +13,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
 import java.security.MessageDigest
 
 data class ReleaseAsset(
@@ -71,11 +71,13 @@ object VersionComparator {
 
 object GitHubReleaseParser {
     fun parseRelease(json: String): ReleaseInfo {
-        val obj = try {
-            JsonParser.parseString(json).takeIf { it.isJsonObject }?.asJsonObject
+        val root = try {
+            JsonParser.parseString(json)
         } catch (error: JsonParseException) {
             throw IllegalArgumentException("GitHub release response is not valid JSON", error)
-        } ?: throw IllegalArgumentException("GitHub release response is not an object")
+        }
+        require(root.isJsonObject) { "GitHub release response is not an object" }
+        val obj = root.asJsonObject
 
         val assets = obj["assets"]
             ?.takeIf { it.isJsonArray }
@@ -184,7 +186,7 @@ class GitHubReleaseUpdater(
     }
 
     private fun getText(url: String): String {
-        val connection = URL(url).openConnection() as HttpURLConnection
+        val connection = URI(url).toURL().openConnection() as HttpURLConnection
         return try {
             connection.setRequestProperty("Accept", "application/vnd.github+json")
             connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
@@ -198,7 +200,7 @@ class GitHubReleaseUpdater(
     }
 
     private fun downloadTo(url: String, target: File) {
-        val connection = URL(url).openConnection() as HttpURLConnection
+        val connection = URI(url).toURL().openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = 15_000
             connection.readTimeout = 60_000

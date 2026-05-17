@@ -1,10 +1,10 @@
 package com.paruchan.questlog
 
 import com.paruchan.questlog.core.Quest
+import com.paruchan.questlog.core.JournalEntry
 import com.paruchan.questlog.core.QuestLogJsonCodec
 import com.paruchan.questlog.core.QuestLogState
 import com.paruchan.questlog.core.UserBackupFiles
-import com.paruchan.questlog.data.QuestLogRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -13,18 +13,21 @@ import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.io.File
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 
+@RunWith(RobolectricTestRunner::class)
 class BackupRoundTripTest {
     @get:Rule
     val temp = TemporaryFolder()
 
     @Test
     fun `backup export and restore round trip preserves state`() {
-        val source = QuestLogRepository(temp.newFile("source.json"))
+        val source = testQuestLogRepository(temp.root, legacyStateFile = temp.newFile("source.json"))
         source.save(
             QuestLogState(
                 quests = listOf(Quest(id = "q1", title = "Make tea", xp = 15)),
@@ -40,17 +43,68 @@ class BackupRoundTripTest {
         )
 
         val backup = source.exportBackup()
-        val restored = QuestLogRepository(temp.newFile("restored.json")).restoreBackup(backup)
+        val restored = testQuestLogRepository(temp.root, legacyStateFile = temp.newFile("restored.json")).restoreBackup(backup)
 
         assertEquals("Make tea", restored.quests.single().title)
         assertEquals(15, restored.completions.single().xpAwarded)
-        assertNotNull(restored.exportedAt)
+        assertNotNull(QuestLogJsonCodec().decodeBackup(backup).exportedAt)
+    }
+
+    @Test
+    fun `schema one backup restore defaults journal entries to empty`() {
+        val repository = testQuestLogRepository(temp.root, legacyStateFile = temp.newFile("schema-one.json"))
+
+        val restored = repository.restoreBackup(
+            """
+            {
+              "schemaVersion": 1,
+              "quests": [{"id":"q1","title":"Old quest","xp":15}],
+              "completions": [],
+              "levels": [],
+              "exportedAt": "2026-05-05T12:00:00Z"
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("Old quest", restored.quests.single().title)
+        assertTrue(restored.journalEntries.isEmpty())
+        assertEquals(2, restored.schemaVersion)
+    }
+
+    @Test
+    fun `schema two backup round trip preserves journal entries`() {
+        val source = testQuestLogRepository(temp.root, legacyStateFile = temp.newFile("journal-source.json"))
+        source.save(
+            QuestLogState(
+                quests = listOf(Quest(id = "q1", title = "Make tea", xp = 15)),
+                journalEntries = listOf(
+                    JournalEntry(
+                        id = "journal-2026-05-05",
+                        localDate = "2026-05-05",
+                        happyText = "Paruchan had tea.",
+                        gratefulText = "Paruchan is grateful for quiet.",
+                        favoriteMemoryText = "A cosy cup.",
+                        createdAt = "2026-05-05T12:00:00Z",
+                        updatedAt = "2026-05-05T12:01:00Z",
+                        xpAwarded = 10,
+                    ),
+                ),
+            ),
+        )
+
+        val backup = source.exportBackup()
+        val restored = testQuestLogRepository(temp.root, legacyStateFile = temp.newFile("journal-restored.json")).restoreBackup(backup)
+
+        assertEquals(2, QuestLogJsonCodec().decodeBackup(backup).schemaVersion)
+        assertEquals("A cosy cup.", restored.journalEntries.single().favoriteMemoryText)
+        assertEquals(10, restored.journalEntries.single().xpAwarded)
     }
 
     @Test
     fun `backup encoding for an existing state adds exported timestamp`() {
-        val repository = QuestLogRepository(
-            stateFile = temp.newFile("encode-source.json"),
+        val repository = testQuestLogRepository(
+            root = temp.root,
+            legacyStateFile = temp.newFile("encode-source.json"),
             clock = fixedClock(day = 5),
         )
 
@@ -65,7 +119,7 @@ class BackupRoundTripTest {
 
     @Test
     fun `backup restore rejects empty object without replacing current state`() {
-        val repository = QuestLogRepository(temp.newFile("state.json"))
+        val repository = testQuestLogRepository(temp.root, legacyStateFile = temp.newFile("state.json"))
         repository.save(QuestLogState(quests = listOf(Quest(id = "q1", title = "Keep me", xp = 15))))
 
         val error = assertIllegalArgument {
@@ -78,7 +132,7 @@ class BackupRoundTripTest {
 
     @Test
     fun `backup restore rejects quest pack JSON`() {
-        val repository = QuestLogRepository(temp.newFile("quest-pack-state.json"))
+        val repository = testQuestLogRepository(temp.root, legacyStateFile = temp.newFile("quest-pack-state.json"))
         repository.save(QuestLogState(quests = listOf(Quest(id = "q1", title = "Keep me", xp = 15))))
 
         val error = assertIllegalArgument {
@@ -91,10 +145,10 @@ class BackupRoundTripTest {
 
     @Test
     fun `local db backup is dated and created once per day`() {
-        val stateFile = File(temp.root, "questlog.json")
         val backupDirectory = File(temp.root, "questlog-backups")
-        val repository = QuestLogRepository(
-            stateFile = stateFile,
+        val repository = testQuestLogRepository(
+            root = temp.root,
+            legacyStateFile = File(temp.root, "questlog.json"),
             clock = fixedClock(day = 5),
             backupDirectory = backupDirectory,
         )
@@ -111,12 +165,12 @@ class BackupRoundTripTest {
 
     @Test
     fun `local db backups keep newest ten copies`() {
-        val stateFile = File(temp.root, "questlog.json")
         val backupDirectory = File(temp.root, "questlog-backups")
 
         for (day in 1..12) {
-            QuestLogRepository(
-                stateFile = stateFile,
+            testQuestLogRepository(
+                root = File(temp.root, "day-$day").also { it.mkdirs() },
+                legacyStateFile = File(temp.root, "questlog-$day.json"),
                 clock = fixedClock(day),
                 backupDirectory = backupDirectory,
             ).save(QuestLogState(quests = listOf(Quest(id = "q$day", title = "Day $day", xp = day))))

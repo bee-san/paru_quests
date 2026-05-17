@@ -108,6 +108,7 @@ import androidx.compose.ui.unit.sp
 import com.paruchan.questlog.R
 import com.paruchan.questlog.BuildConfig
 import com.paruchan.questlog.core.Completion
+import com.paruchan.questlog.core.JournalEntry
 import com.paruchan.questlog.core.LevelProgress
 import com.paruchan.questlog.core.Quest
 import com.paruchan.questlog.core.QuestCadence
@@ -236,15 +237,19 @@ fun ParuchanQuestLogApp(
                     ) {
                         when (screen) {
                             Screen.Home -> DashboardScreen(
-                                progress = viewModel.progress,
-                                quests = viewModel.state.quests,
-                                availableQuests = viewModel.state.quests.filter { viewModel.canComplete(it) },
-                                canComplete = viewModel::canComplete,
-                                progressFor = viewModel::progressFor,
-                                onComplete = { questId, amount -> viewModel.completeQuest(questId, amount) },
-                                onShowHistory = { screen = Screen.History },
-                                onShowFiles = { screen = Screen.Files },
-                                onShowSettings = { screen = Screen.Settings },
+                                state = DashboardState(
+                                    progress = viewModel.progress,
+                                    quests = viewModel.state.quests,
+                                    availableQuests = viewModel.state.quests.filter { viewModel.canComplete(it) },
+                                ),
+                                actions = DashboardActions(
+                                    canComplete = viewModel::canComplete,
+                                    progressFor = viewModel::progressFor,
+                                    onComplete = { questId, amount -> viewModel.completeQuest(questId, amount) },
+                                    onShowHistory = { screen = Screen.History },
+                                    onShowFiles = { screen = Screen.Files },
+                                    onShowSettings = { screen = Screen.Settings },
+                                ),
                             )
 
                             Screen.History -> HistoryScreen(
@@ -252,30 +257,47 @@ fun ParuchanQuestLogApp(
                                 quests = viewModel.state.quests,
                             )
 
+                            Screen.Diary -> DiaryScreen(
+                                diaryUiState = viewModel.diaryUiState,
+                                onSave = viewModel::saveJournalEntry,
+                            )
+
                             Screen.Files -> ImportExportScreen(
-                                userBackupFolderEnabled = viewModel.userBackupFolderEnabled,
-                                userBackupInProgress = viewModel.userBackupInProgress,
-                                onImportQuestPack = onImportQuestPack,
-                                onExportBackup = onExportBackup,
-                                onRestoreBackup = onRestoreBackup,
-                                onChooseBackupFolder = onChooseBackupFolder,
-                                onBackupNow = viewModel::backupNow,
-                                onClearBackupFolder = viewModel::clearBackupFolder,
+                                state = ImportExportState(
+                                    userBackupFolderEnabled = viewModel.userBackupFolderEnabled,
+                                    userBackupInProgress = viewModel.userBackupInProgress,
+                                ),
+                                actions = ImportExportActions(
+                                    onImportQuestPack = onImportQuestPack,
+                                    onExportBackup = onExportBackup,
+                                    onRestoreBackup = onRestoreBackup,
+                                    onChooseBackupFolder = onChooseBackupFolder,
+                                    onBackupNow = viewModel::backupNow,
+                                    onClearBackupFolder = viewModel::clearBackupFolder,
+                                ),
                             )
 
                             Screen.Settings -> SettingsScreen(
-                                updateInProgress = viewModel.updateInProgress,
-                                sharedPackImportInProgress = viewModel.sharedPackImportInProgress,
-                                sharedPackPasswordSaved = viewModel.sharedPackPasswordSaved,
-                                questNotificationSettings = viewModel.questNotificationSettings,
-                                onCheckForUpdate = { viewModel.checkForUpdate(context) },
-                                onShowFiles = { screen = Screen.Files },
-                                onQuestNotificationTimeChange = viewModel::updateQuestNotificationTime,
-                                onEnableQuestNotifications = onEnableQuestNotifications,
-                                onDisableQuestNotifications = viewModel::disableQuestNotifications,
-                                onSaveSharedPackPassword = viewModel::saveSharedPackPassword,
-                                onClearSharedPackPassword = viewModel::clearSharedPackPassword,
-                                onImportSharedPacks = viewModel::importSharedPacks,
+                                state = SettingsState(
+                                    updateInProgress = viewModel.updateInProgress,
+                                    sharedPackImportInProgress = viewModel.sharedPackImportInProgress,
+                                    sharedPackPasswordSaved = viewModel.sharedPackPasswordSaved,
+                                    questNotificationSettings = viewModel.questNotificationSettings,
+                                ),
+                                actions = SettingsActions(
+                                    onCheckForUpdate = { viewModel.checkForUpdate(context) },
+                                    onShowFiles = { screen = Screen.Files },
+                                    notifications = ReminderActions(
+                                        onTimeChange = viewModel::updateQuestNotificationTime,
+                                        onEnable = onEnableQuestNotifications,
+                                        onDisable = viewModel::disableQuestNotifications,
+                                    ),
+                                    sharedPacks = SharedPackActions(
+                                        onSavePassword = viewModel::saveSharedPackPassword,
+                                        onClearPassword = viewModel::clearSharedPackPassword,
+                                        onImport = viewModel::importSharedPacks,
+                                    ),
+                                ),
                             )
                         }
                     }
@@ -475,19 +497,12 @@ private fun ParchmentPanel(
 
 @Composable
 private fun DashboardScreen(
-    progress: LevelProgress,
-    quests: List<Quest>,
-    availableQuests: List<Quest>,
-    canComplete: (Quest) -> Boolean,
-    progressFor: (Quest) -> QuestProgress,
-    onComplete: (String, Int) -> Unit,
-    onShowHistory: () -> Unit,
-    onShowFiles: () -> Unit,
-    onShowSettings: () -> Unit,
+    state: DashboardState,
+    actions: DashboardActions,
 ) {
-    val dailyCount = quests.count { QuestCadence.from(it) == QuestCadence.Daily && canComplete(it) }
-    val goalCount = quests.count { (QuestGoalType.from(it) != QuestGoalType.Completion || it.goalTarget > 1) && !it.archived }
-    val spotlightQuests = availableQuests.sortedWith(
+    val dailyCount = state.quests.count { QuestCadence.from(it) == QuestCadence.Daily && actions.canComplete(it) }
+    val goalCount = state.quests.count { (QuestGoalType.from(it) != QuestGoalType.Completion || it.goalTarget > 1) && !it.archived }
+    val spotlightQuests = state.availableQuests.sortedWith(
         compareByDescending<Quest> { QuestCadence.from(it) == QuestCadence.Daily }
             .thenByDescending { QuestGoalType.from(it) == QuestGoalType.Timer }
             .thenByDescending { it.timerMinutes != null }
@@ -496,6 +511,42 @@ private fun DashboardScreen(
             .thenBy { it.title },
     )
 
+    DashboardContent(
+        progress = state.progress,
+        questCount = state.quests.size,
+        availableQuestCount = state.availableQuests.size,
+        dailyCount = dailyCount,
+        goalCount = goalCount,
+        spotlightQuests = spotlightQuests,
+        actions = actions,
+    )
+}
+
+private data class DashboardState(
+    val progress: LevelProgress,
+    val quests: List<Quest>,
+    val availableQuests: List<Quest>,
+)
+
+private data class DashboardActions(
+    val canComplete: (Quest) -> Boolean,
+    val progressFor: (Quest) -> QuestProgress,
+    val onComplete: (String, Int) -> Unit,
+    val onShowHistory: () -> Unit,
+    val onShowFiles: () -> Unit,
+    val onShowSettings: () -> Unit,
+)
+
+@Composable
+private fun DashboardContent(
+    progress: LevelProgress,
+    questCount: Int,
+    availableQuestCount: Int,
+    dailyCount: Int,
+    goalCount: Int,
+    spotlightQuests: List<Quest>,
+    actions: DashboardActions,
+) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(bottom = 18.dp),
@@ -520,21 +571,17 @@ private fun DashboardScreen(
         }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                StatCard("Active", availableQuests.size.toString(), "Quests", Modifier.weight(1f))
-                StatCard("Daily", dailyCount.toString(), "Open today", Modifier.weight(1f))
-                StatCard("Goals", goalCount.toString(), "Targets", Modifier.weight(1f))
-            }
+            DashboardStats(availableQuestCount, dailyCount, goalCount)
         }
 
         item {
             SectionHeader("Quests")
         }
 
-        if (availableQuests.isEmpty()) {
+        if (spotlightQuests.isEmpty()) {
             item {
                 EmptyStateCard(
-                    if (quests.isEmpty()) {
+                    if (questCount == 0) {
                         "Import a quest pack to begin."
                     } else {
                         "No quests are available right now."
@@ -545,10 +592,10 @@ private fun DashboardScreen(
             items(spotlightQuests, key = { it.id }) { quest ->
                 QuestListCard(
                     quest = quest,
-                    progress = progressFor(quest),
+                    progress = actions.progressFor(quest),
                     completed = false,
-                    enabled = canComplete(quest),
-                    onComplete = { amount -> onComplete(quest.id, amount) },
+                    enabled = actions.canComplete(quest),
+                    onComplete = { amount -> actions.onComplete(quest.id, amount) },
                 )
             }
         }
@@ -556,11 +603,20 @@ private fun DashboardScreen(
         item {
             SectionHeader("Quick Session")
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                QuickAction("Log", Icons.Outlined.History, onShowHistory, Modifier.weight(1f))
-                QuickAction("Files", Icons.Outlined.ImportExport, onShowFiles, Modifier.weight(1f))
-                QuickAction("Update", Icons.Outlined.SystemUpdateAlt, onShowSettings, Modifier.weight(1f))
+                QuickAction("Log", Icons.Outlined.History, actions.onShowHistory, Modifier.weight(1f))
+                QuickAction("Files", Icons.Outlined.ImportExport, actions.onShowFiles, Modifier.weight(1f))
+                QuickAction("Update", Icons.Outlined.SystemUpdateAlt, actions.onShowSettings, Modifier.weight(1f))
             }
         }
+    }
+}
+
+@Composable
+private fun DashboardStats(availableQuestCount: Int, dailyCount: Int, goalCount: Int) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        StatCard("Active", availableQuestCount.toString(), "Quests", Modifier.weight(1f))
+        StatCard("Daily", dailyCount.toString(), "Open today", Modifier.weight(1f))
+        StatCard("Goals", goalCount.toString(), "Targets", Modifier.weight(1f))
     }
 }
 
@@ -671,72 +727,137 @@ private fun QuestListCard(
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(verticalAlignment = Alignment.Top) {
-                CircleQuestIcon(modifier = Modifier.size(70.dp), icon = quest.icon)
-                Spacer(Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    DisplayText(
-                        quest.title,
-                        24.sp,
-                        Ink,
-                        FontWeight.Bold,
-                        maxLines = 3,
-                    )
-                    if (quest.flavourText.isNotBlank()) {
-                        Text(
-                            quest.flavourText,
-                            color = MutedInk,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 4,
-                        )
-                    }
-                    if (progress.hasGoal) {
-                        Spacer(Modifier.height(8.dp))
-                        GoalProgressBar(progress = progress)
-                    }
-                    quest.timerMinutes?.takeIf { goalType != QuestGoalType.Timer }?.let { minutes ->
-                        Spacer(Modifier.height(8.dp))
-                        QuestTimer(questId = quest.id, minutes = minutes)
-                    }
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    DisplayText(
-                        "${quest.xp} XP",
-                        22.sp,
-                        Plum,
-                        FontWeight.SemiBold,
-                        maxLines = 2,
-                    )
-                    if (progress.hasGoal) {
-                        Text("XP awarded when the goal completes", color = MutedInk, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                if (progress.hasGoal) {
-                    Text("on goal", color = MutedInk, style = MaterialTheme.typography.bodySmall)
-                }
-                if (goalType == QuestGoalType.Counter) {
-                    CounterIncrementControls(
-                        unit = progress.unit,
-                        enabled = enabled,
-                        onLog = onComplete,
-                    )
-                } else if (goalType == QuestGoalType.Timer) {
-                    TimerLogControls(
-                        questId = quest.id,
-                        enabled = enabled,
-                        onLog = onComplete,
-                    )
-                } else {
-                    CompleteButton(enabled = enabled, completed = completed && !quest.repeatable, onClick = { onComplete(1) })
-                }
-            }
+            QuestListCardHeader(quest = quest, progress = progress, goalType = goalType)
+            QuestActionRow(
+                quest = quest,
+                progress = progress,
+                completed = completed,
+                enabled = enabled,
+                onComplete = onComplete,
+            )
         }
+    }
+}
+
+@Composable
+private fun QuestListCardHeader(
+    quest: Quest,
+    progress: QuestProgress,
+    goalType: QuestGoalType,
+) {
+    Row(verticalAlignment = Alignment.Top) {
+        CircleQuestIcon(modifier = Modifier.size(70.dp), icon = quest.icon)
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            DisplayText(
+                quest.title,
+                24.sp,
+                Ink,
+                FontWeight.Bold,
+                maxLines = 3,
+            )
+            QuestFlavorText(quest.flavourText)
+            QuestProgressDetails(quest = quest, progress = progress, goalType = goalType)
+        }
+    }
+}
+
+@Composable
+private fun QuestFlavorText(flavourText: String) {
+    if (flavourText.isBlank()) return
+    Text(
+        flavourText,
+        color = MutedInk,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 4,
+    )
+}
+
+@Composable
+private fun QuestProgressDetails(
+    quest: Quest,
+    progress: QuestProgress,
+    goalType: QuestGoalType,
+) {
+    if (progress.hasGoal) {
+        Spacer(Modifier.height(8.dp))
+        GoalProgressBar(progress = progress)
+    }
+    quest.timerMinutes?.takeIf { goalType != QuestGoalType.Timer }?.let { minutes ->
+        Spacer(Modifier.height(8.dp))
+        QuestTimer(questId = quest.id, minutes = minutes)
+    }
+}
+
+@Composable
+private fun QuestActionRow(
+    quest: Quest,
+    progress: QuestProgress,
+    completed: Boolean,
+    enabled: Boolean,
+    onComplete: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        QuestXpSummary(quest.xp, progress.hasGoal, Modifier.weight(1f))
+        if (progress.hasGoal) {
+            Text("on goal", color = MutedInk, style = MaterialTheme.typography.bodySmall)
+        }
+        QuestCompletionControls(
+            quest = quest,
+            progress = progress,
+            completed = completed,
+            enabled = enabled,
+            onComplete = onComplete,
+        )
+    }
+}
+
+@Composable
+private fun QuestXpSummary(xp: Int, hasGoal: Boolean, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        DisplayText(
+            "$xp XP",
+            22.sp,
+            Plum,
+            FontWeight.SemiBold,
+            maxLines = 2,
+        )
+        if (hasGoal) {
+            Text("XP awarded when the goal completes", color = MutedInk, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun QuestCompletionControls(
+    quest: Quest,
+    progress: QuestProgress,
+    completed: Boolean,
+    enabled: Boolean,
+    onComplete: (Int) -> Unit,
+) {
+    when (progress.goalType) {
+        QuestGoalType.Counter -> CounterIncrementControls(
+            unit = progress.unit,
+            enabled = enabled,
+            onLog = onComplete,
+        )
+
+        QuestGoalType.Timer -> TimerLogControls(
+            questId = quest.id,
+            enabled = enabled,
+            onLog = onComplete,
+        )
+
+        QuestGoalType.Completion -> CompleteButton(
+            enabled = enabled,
+            completed = completed && !quest.repeatable,
+            onClick = { onComplete(1) },
+        )
     }
 }
 
@@ -948,15 +1069,241 @@ private fun HistoryScreen(
 }
 
 @Composable
+private fun DiaryScreen(
+    diaryUiState: DiaryUiState,
+    onSave: (String, String, String) -> Unit,
+) {
+    val todayEntry = diaryUiState.todayEntry
+    var happyText by rememberSaveable(todayEntry.localDate, "happyText") { mutableStateOf(todayEntry.happyText) }
+    var gratefulText by rememberSaveable(todayEntry.localDate, "gratefulText") { mutableStateOf(todayEntry.gratefulText) }
+    var favoriteMemoryText by rememberSaveable(todayEntry.localDate, "favoriteMemoryText") {
+        mutableStateOf(todayEntry.favoriteMemoryText)
+    }
+
+    LaunchedEffect(todayEntry.localDate, todayEntry.updatedAt) {
+        happyText = todayEntry.happyText
+        gratefulText = todayEntry.gratefulText
+        favoriteMemoryText = todayEntry.favoriteMemoryText
+    }
+
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 18.dp)) {
+        item {
+            SectionHeader("Daily Diary")
+            ReflectionCard(diaryUiState.dailyReflection)
+        }
+        item {
+            TodayDiaryCard(
+                form = DiaryFormState(
+                    entry = todayEntry,
+                    happyText = happyText,
+                    gratefulText = gratefulText,
+                    favoriteMemoryText = favoriteMemoryText,
+                    saving = diaryUiState.saving,
+                ),
+                actions = DiaryFormActions(
+                    onHappyChange = { happyText = it },
+                    onGratefulChange = { gratefulText = it },
+                    onFavoriteMemoryChange = { favoriteMemoryText = it },
+                    onSave = { onSave(happyText, gratefulText, favoriteMemoryText) },
+                ),
+            )
+        }
+        item {
+            SectionHeader("Recent Entries")
+        }
+        if (diaryUiState.recentEntries.isEmpty()) {
+            item { EmptyStateCard("No diary entries yet.") }
+        } else {
+            items(diaryUiState.recentEntries, key = { it.id.ifBlank { it.localDate } }) { entry ->
+                JournalEntryCard(entry)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReflectionCard(reflection: String?) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
+        colors = CardDefaults.cardColors(containerColor = Parchment),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DisplayText("Today remembers", 22.sp, Ink, FontWeight.Bold, maxLines = 2)
+            Text(
+                reflection ?: "Paruchan will remember something sweet here after a few diary days.",
+                color = if (reflection == null) MutedInk else Ink,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TodayDiaryCard(
+    form: DiaryFormState,
+    actions: DiaryFormActions,
+) {
+    val draftState = form.draftState()
+
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
+        colors = CardDefaults.cardColors(containerColor = Parchment),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            DisplayText("Today's entry", 24.sp, Ink, FontWeight.Bold, maxLines = 2)
+            DiaryTextField(
+                value = form.happyText,
+                onValueChange = actions.onHappyChange,
+                label = "One thing that made Paruchan happy today",
+            )
+            DiaryTextField(
+                value = form.gratefulText,
+                onValueChange = actions.onGratefulChange,
+                label = "One thing Paruchan is grateful for today",
+            )
+            DiaryTextField(
+                value = form.favoriteMemoryText,
+                onValueChange = actions.onFavoriteMemoryChange,
+                label = "Tell me one of your favourite memories",
+            )
+            Text(draftState.rewardStatus, color = Plum, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            DiarySaveButton(form = form, draftState = draftState, onSave = actions.onSave)
+        }
+    }
+}
+
+@Composable
+private fun DiarySaveButton(
+    form: DiaryFormState,
+    draftState: DiaryDraftState,
+    onSave: () -> Unit,
+) {
+    Button(
+        onClick = onSave,
+        enabled = !form.saving && (draftState.hasAnyDraft || form.entry.createdAt.isNotBlank()),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
+        border = BorderStroke(1.dp, Gold),
+    ) {
+        if (form.saving) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Gold)
+        } else {
+            Icon(Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(if (form.entry.createdAt.isBlank()) "Save diary" else "Update diary", maxLines = 1)
+    }
+}
+
+private fun DiaryFormState.draftState(): DiaryDraftState {
+    val hasAnyDraft = happyText.isNotBlank() ||
+        gratefulText.isNotBlank() ||
+        favoriteMemoryText.isNotBlank()
+    val completeDraft = happyText.trim().isNotBlank() &&
+        gratefulText.trim().isNotBlank() &&
+        favoriteMemoryText.trim().isNotBlank()
+    return DiaryDraftState(
+        hasAnyDraft = hasAnyDraft,
+        rewardStatus = when {
+            entry.xpAwarded == 10 -> "Diary reward claimed: +10 XP"
+            completeDraft -> "Diary reward waiting"
+            hasAnyDraft -> "Saved as a tiny draft"
+            else -> "Diary reward waiting"
+        },
+    )
+}
+
+private data class DiaryFormState(
+    val entry: JournalEntry,
+    val happyText: String,
+    val gratefulText: String,
+    val favoriteMemoryText: String,
+    val saving: Boolean,
+)
+
+private data class DiaryFormActions(
+    val onHappyChange: (String) -> Unit,
+    val onGratefulChange: (String) -> Unit,
+    val onFavoriteMemoryChange: (String) -> Unit,
+    val onSave: () -> Unit,
+)
+
+private data class DiaryDraftState(
+    val hasAnyDraft: Boolean,
+    val rewardStatus: String,
+)
+
+@Composable
+private fun DiaryTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 96.dp),
+        label = { Text(label) },
+        minLines = 2,
+        maxLines = 4,
+        shape = RoundedCornerShape(8.dp),
+    )
+}
+
+@Composable
+private fun JournalEntryCard(entry: JournalEntry) {
+    val preview = entry.favoriteMemoryText.ifBlank { entry.happyText }.ifBlank { entry.gratefulText }
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.25f)),
+        colors = CardDefaults.cardColors(containerColor = Parchment),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            CircleQuestIcon(modifier = Modifier.size(48.dp), icon = "star")
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DisplayText(entry.localDate, 20.sp, Ink, FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+                    if (entry.xpAwarded > 0) {
+                        Text("+${entry.xpAwarded} XP", color = Plum, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Text(
+                    preview.ifBlank { "Tiny draft" },
+                    color = MutedInk,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ImportExportScreen(
-    userBackupFolderEnabled: Boolean,
-    userBackupInProgress: Boolean,
-    onImportQuestPack: () -> Unit,
-    onExportBackup: () -> Unit,
-    onRestoreBackup: () -> Unit,
-    onChooseBackupFolder: () -> Unit,
-    onBackupNow: () -> Unit,
-    onClearBackupFolder: () -> Unit,
+    state: ImportExportState,
+    actions: ImportExportActions,
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 18.dp)) {
         item {
@@ -972,15 +1319,15 @@ private fun ImportExportScreen(
                 icon = Icons.Outlined.FileUpload,
                 title = "Import quest pack",
                 detail = "Make imported quests current; close older quests",
-                onClick = onImportQuestPack,
+                onClick = actions.onImportQuestPack,
             )
         }
         item {
             OrnateActionButton(
                 icon = Icons.Outlined.FileDownload,
                 title = "Export backup",
-                detail = "Save quests, completions, and levels",
-                onClick = onExportBackup,
+                detail = "Save quests, completions, levels, and diary",
+                onClick = actions.onExportBackup,
             )
         }
         item {
@@ -988,20 +1335,34 @@ private fun ImportExportScreen(
                 icon = Icons.Outlined.Restore,
                 title = "Restore backup",
                 detail = "Replace this device's quest log",
-                onClick = onRestoreBackup,
+                onClick = actions.onRestoreBackup,
             )
         }
         item {
             UserBackupFolderCard(
-                enabled = userBackupFolderEnabled,
-                inProgress = userBackupInProgress,
-                onChooseBackupFolder = onChooseBackupFolder,
-                onBackupNow = onBackupNow,
-                onClearBackupFolder = onClearBackupFolder,
+                enabled = state.userBackupFolderEnabled,
+                inProgress = state.userBackupInProgress,
+                onChooseBackupFolder = actions.onChooseBackupFolder,
+                onBackupNow = actions.onBackupNow,
+                onClearBackupFolder = actions.onClearBackupFolder,
             )
         }
     }
 }
+
+private data class ImportExportState(
+    val userBackupFolderEnabled: Boolean,
+    val userBackupInProgress: Boolean,
+)
+
+private data class ImportExportActions(
+    val onImportQuestPack: () -> Unit,
+    val onExportBackup: () -> Unit,
+    val onRestoreBackup: () -> Unit,
+    val onChooseBackupFolder: () -> Unit,
+    val onBackupNow: () -> Unit,
+    val onClearBackupFolder: () -> Unit,
+)
 
 @Composable
 private fun UserBackupFolderCard(
@@ -1110,166 +1471,238 @@ private fun CompactTextField(
 
 @Composable
 private fun SettingsScreen(
-    updateInProgress: Boolean,
-    sharedPackImportInProgress: Boolean,
-    sharedPackPasswordSaved: Boolean,
-    questNotificationSettings: QuestNotificationSettings,
-    onCheckForUpdate: () -> Unit,
-    onShowFiles: () -> Unit,
-    onQuestNotificationTimeChange: (Int, Int) -> Unit,
-    onEnableQuestNotifications: () -> Unit,
-    onDisableQuestNotifications: () -> Unit,
-    onSaveSharedPackPassword: (String) -> Unit,
-    onClearSharedPackPassword: () -> Unit,
-    onImportSharedPacks: () -> Unit,
+    state: SettingsState,
+    actions: SettingsActions,
 ) {
-    var sharedPackPassword by remember { mutableStateOf("") }
-
     LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 18.dp)) {
         item {
             SectionHeader("Settings")
-            Card(
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
-                colors = CardDefaults.cardColors(containerColor = Parchment),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                    .padding(16.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    LevelBadge(7)
-                    Spacer(Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        DisplayText("Version ${BuildConfig.VERSION_NAME}", 24.sp, Ink, FontWeight.Bold, maxLines = 2)
-                        Text(BuildConfig.UPDATE_REPOSITORY, color = MutedInk, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
+            VersionCard()
         }
         item {
-            Button(
-                onClick = onCheckForUpdate,
-                enabled = !updateInProgress,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 64.dp),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
-                border = BorderStroke(1.dp, Gold),
-            ) {
-                if (updateInProgress) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Gold)
-                } else {
-                    Icon(Icons.Outlined.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(24.dp))
-                }
-                Spacer(Modifier.width(10.dp))
-                DisplayText("Check for update", 24.sp, Gold, FontWeight.Bold, maxLines = 2, textAlign = TextAlign.Center)
-            }
+            CheckForUpdateButton(
+                inProgress = state.updateInProgress,
+                onClick = actions.onCheckForUpdate,
+            )
         }
         item {
             OrnateActionButton(
                 icon = Icons.Outlined.ImportExport,
                 title = "Files",
                 detail = "Import quest packs, export backups, and restore",
-                onClick = onShowFiles,
+                onClick = actions.onShowFiles,
             )
         }
         item {
             QuestReminderSettingsCard(
-                settings = questNotificationSettings,
-                onTimeChange = onQuestNotificationTimeChange,
-                onEnable = onEnableQuestNotifications,
-                onDisable = onDisableQuestNotifications,
+                settings = state.questNotificationSettings,
+                onTimeChange = actions.notifications.onTimeChange,
+                onEnable = actions.notifications.onEnable,
+                onDisable = actions.notifications.onDisable,
             )
         }
         item {
-            Card(
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
-                colors = CardDefaults.cardColors(containerColor = Parchment),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            if (sharedPackPasswordSaved) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
-                            contentDescription = null,
-                            tint = Plum,
-                            modifier = Modifier.size(28.dp),
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            DisplayText("Shared packs", 24.sp, Ink, FontWeight.Bold, maxLines = 1)
-                            Text(
-                                if (sharedPackPasswordSaved) {
-                                    "Password saved. New bundled packs import after updates."
-                                } else {
-                                    "Save the password to unlock encrypted bundled packs."
-                                },
-                                color = MutedInk,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
+            SharedPackSettingsCard(
+                passwordSaved = state.sharedPackPasswordSaved,
+                importInProgress = state.sharedPackImportInProgress,
+                actions = actions.sharedPacks,
+            )
+        }
+    }
+}
 
-                    CompactTextField(
-                        value = sharedPackPassword,
-                        onValueChange = { sharedPackPassword = it },
-                        label = "Shared pack password",
-                        keyboardType = KeyboardType.Password,
-                        visualTransformation = PasswordVisualTransformation(),
-                    )
+private data class SettingsState(
+    val updateInProgress: Boolean,
+    val sharedPackImportInProgress: Boolean,
+    val sharedPackPasswordSaved: Boolean,
+    val questNotificationSettings: QuestNotificationSettings,
+)
 
-                    Button(
-                        onClick = {
-                            onSaveSharedPackPassword(sharedPackPassword)
-                            sharedPackPassword = ""
-                        },
-                        enabled = sharedPackPassword.isNotBlank() && !sharedPackImportInProgress,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
-                        border = BorderStroke(1.dp, Gold),
-                    ) {
-                        Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Save password", maxLines = 1)
-                    }
+private data class SettingsActions(
+    val onCheckForUpdate: () -> Unit,
+    val onShowFiles: () -> Unit,
+    val notifications: ReminderActions,
+    val sharedPacks: SharedPackActions,
+)
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Button(
-                            onClick = onImportSharedPacks,
-                            enabled = sharedPackPasswordSaved && !sharedPackImportInProgress,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = GoldDeep, contentColor = Color.White),
-                        ) {
-                            if (sharedPackImportInProgress) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
-                            } else {
-                                Icon(Icons.Outlined.FileDownload, contentDescription = null, modifier = Modifier.size(20.dp))
-                            }
-                            Spacer(Modifier.width(6.dp))
-                            Text("Import now", maxLines = 1)
-                        }
-                        OutlinedButton(
-                            onClick = onClearSharedPackPassword,
-                            enabled = sharedPackPasswordSaved && !sharedPackImportInProgress,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Plum.copy(alpha = 0.42f)),
-                        ) {
-                            Text("Clear", maxLines = 1, color = Plum)
-                        }
-                    }
-                }
+private data class ReminderActions(
+    val onTimeChange: (Int, Int) -> Unit,
+    val onEnable: () -> Unit,
+    val onDisable: () -> Unit,
+)
+
+private data class SharedPackActions(
+    val onSavePassword: (String) -> Unit,
+    val onClearPassword: () -> Unit,
+    val onImport: () -> Unit,
+)
+
+@Composable
+private fun VersionCard() {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
+        colors = CardDefaults.cardColors(containerColor = Parchment),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            LevelBadge(7)
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                DisplayText("Version ${BuildConfig.VERSION_NAME}", 24.sp, Ink, FontWeight.Bold, maxLines = 2)
+                Text(BuildConfig.UPDATE_REPOSITORY, color = MutedInk, style = MaterialTheme.typography.bodyMedium)
             }
+        }
+    }
+}
+
+@Composable
+private fun CheckForUpdateButton(inProgress: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = !inProgress,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
+        border = BorderStroke(1.dp, Gold),
+    ) {
+        if (inProgress) {
+            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Gold)
+        } else {
+            Icon(Icons.Outlined.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(24.dp))
+        }
+        Spacer(Modifier.width(10.dp))
+        DisplayText("Check for update", 24.sp, Gold, FontWeight.Bold, maxLines = 2, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+private fun SharedPackSettingsCard(
+    passwordSaved: Boolean,
+    importInProgress: Boolean,
+    actions: SharedPackActions,
+) {
+    var sharedPackPassword by remember { mutableStateOf("") }
+
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.35f)),
+        colors = CardDefaults.cardColors(containerColor = Parchment),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SharedPackHeader(passwordSaved)
+            CompactTextField(
+                value = sharedPackPassword,
+                onValueChange = { sharedPackPassword = it },
+                label = "Shared pack password",
+                keyboardType = KeyboardType.Password,
+                visualTransformation = PasswordVisualTransformation(),
+            )
+            SaveSharedPackPasswordButton(
+                password = sharedPackPassword,
+                importInProgress = importInProgress,
+                onSave = {
+                    actions.onSavePassword(sharedPackPassword)
+                    sharedPackPassword = ""
+                },
+            )
+            SharedPackButtons(
+                passwordSaved = passwordSaved,
+                importInProgress = importInProgress,
+                onImport = actions.onImport,
+                onClear = actions.onClearPassword,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SharedPackHeader(passwordSaved: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            if (passwordSaved) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+            contentDescription = null,
+            tint = Plum,
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            DisplayText("Shared packs", 24.sp, Ink, FontWeight.Bold, maxLines = 1)
+            Text(
+                if (passwordSaved) {
+                    "Password saved. New bundled packs import after updates."
+                } else {
+                    "Save the password to unlock encrypted bundled packs."
+                },
+                color = MutedInk,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SaveSharedPackPasswordButton(
+    password: String,
+    importInProgress: Boolean,
+    onSave: () -> Unit,
+) {
+    Button(
+        onClick = onSave,
+        enabled = password.isNotBlank() && !importInProgress,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Plum, contentColor = Gold),
+        border = BorderStroke(1.dp, Gold),
+    ) {
+        Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Save password", maxLines = 1)
+    }
+}
+
+@Composable
+private fun SharedPackButtons(
+    passwordSaved: Boolean,
+    importInProgress: Boolean,
+    onImport: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Button(
+            onClick = onImport,
+            enabled = passwordSaved && !importInProgress,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = GoldDeep, contentColor = Color.White),
+        ) {
+            if (importInProgress) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+            } else {
+                Icon(Icons.Outlined.FileDownload, contentDescription = null, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(6.dp))
+            Text("Import now", maxLines = 1)
+        }
+        OutlinedButton(
+            onClick = onClear,
+            enabled = passwordSaved && !importInProgress,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Plum.copy(alpha = 0.42f)),
+        ) {
+            Text("Clear", maxLines = 1, color = Plum)
         }
     }
 }
@@ -1566,7 +1999,8 @@ private enum class Screen(
     val showInBottomNav: Boolean = false,
 ) {
     Home("Home", "Paruchan", Icons.Outlined.Home, showInBottomNav = true),
-    History("Log", "Quest Log", Icons.Outlined.History),
-    Files("Files", "Library", Icons.Outlined.ImportExport),
+    History("Log", "Quest Log", Icons.Outlined.History, showInBottomNav = true),
+    Diary("Diary", "Diary", Icons.Outlined.Star, showInBottomNav = true),
+    Files("Files", "Library", Icons.Outlined.ImportExport, showInBottomNav = true),
     Settings("Prefs", "Settings", Icons.Outlined.Settings, showInBottomNav = true),
 }
