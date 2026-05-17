@@ -23,15 +23,15 @@ class BundledSharedPackAssetTest {
     }
 
     @Test
-    fun `current shared pack metadata is the bedroom dust bandits generation`() {
+    fun `current shared pack metadata is the sunday soft wins generation`() {
         val currentPack = File(assetsDir(), "shared-packs/current.encrypted.json")
         assertTrue(currentPack.exists())
 
         val root = JsonParser.parseString(currentPack.readText()).asJsonObject
 
         assertEquals("paruchan.encrypted-quest-pack", root["kind"].asString)
-        assertEquals("bedroom-dust-bandits", root["packId"].asString)
-        assertEquals("6", root["packVersion"].asString)
+        assertEquals("sunday-soft-wins", root["packId"].asString)
+        assertEquals("7", root["packVersion"].asString)
     }
 
     private fun assetsDir(): File =
