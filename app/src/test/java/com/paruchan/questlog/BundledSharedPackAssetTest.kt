@@ -31,7 +31,7 @@ class BundledSharedPackAssetTest {
 
         assertEquals("paruchan.encrypted-quest-pack", root["kind"].asString)
         assertEquals("sunday-soft-wins", root["packId"].asString)
-        assertEquals("7", root["packVersion"].asString)
+        assertEquals("8", root["packVersion"].asString)
     }
 
     private fun assetsDir(): File =
