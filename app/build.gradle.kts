@@ -23,8 +23,8 @@ android {
         applicationId = "com.paruchan.questlog"
         minSdk = 26
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.2.4"
+        versionCode = 20
+        versionName = "0.2.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_REPOSITORY", "\"${providers.gradleProperty("updateRepository").orElse("bee-san/paru_quests").get()}\"")

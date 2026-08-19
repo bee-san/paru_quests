@@ -23,15 +23,15 @@ class BundledSharedPackAssetTest {
     }
 
     @Test
-    fun `current shared pack metadata is the bunkyo bloom focus generation`() {
+    fun `current shared pack metadata is the private generation ten`() {
         val currentPack = File(assetsDir(), "shared-packs/current.encrypted.json")
         assertTrue(currentPack.exists())
 
         val root = JsonParser.parseString(currentPack.readText()).asJsonObject
 
         assertEquals("paruchan.encrypted-quest-pack", root["kind"].asString)
-        assertEquals("bunkyo-bloom-focus", root["packId"].asString)
-        assertEquals("9", root["packVersion"].asString)
+        assertEquals("paruchan-private-pack", root["packId"].asString)
+        assertEquals("10", root["packVersion"].asString)
     }
 
     private fun assetsDir(): File =
