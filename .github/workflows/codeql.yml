@@ -44,7 +44,7 @@ jobs:
           queries: security-extended,security-and-quality
 
       - name: Build and test for analysis
-        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
+        run: ./gradlew --no-daemon --rerun-tasks --no-build-cache testDebugUnitTest assembleDebug
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
