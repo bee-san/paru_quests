@@ -23,7 +23,7 @@ class BundledSharedPackAssetTest {
     }
 
     @Test
-    fun `current shared pack metadata is the private generation ten`() {
+    fun `current shared pack metadata is the private generation eleven`() {
         val currentPack = File(assetsDir(), "shared-packs/current.encrypted.json")
         assertTrue(currentPack.exists())
 
@@ -31,7 +31,7 @@ class BundledSharedPackAssetTest {
 
         assertEquals("paruchan.encrypted-quest-pack", root["kind"].asString)
         assertEquals("paruchan-private-pack", root["packId"].asString)
-        assertEquals("10", root["packVersion"].asString)
+        assertEquals("11", root["packVersion"].asString)
     }
 
     private fun assetsDir(): File =
