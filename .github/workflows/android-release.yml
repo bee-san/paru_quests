@@ -20,14 +20,35 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          persist-credentials: false
 
       - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
-          release_tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           version_name="$(grep -E 'versionName = "' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')"
           expected_tag="v${version_name}"
-          if [ "$release_tag" != "$expected_tag" ] && [[ "$release_tag" != ${expected_tag}-* ]]; then
-            echo "Release tag $release_tag does not match app version $expected_tag." >&2
+          if [ "$RELEASE_TAG" != "$expected_tag" ] && [[ "$RELEASE_TAG" != ${expected_tag}-* ]]; then
+            echo "Release tag $RELEASE_TAG does not match app version $expected_tag." >&2
+            exit 1
+          fi
+
+          local_commit="$(git rev-parse HEAD)"
+          local_tag_commit="$(git rev-parse "$RELEASE_TAG^{}")"
+          direct_tag_commit=""
+          peeled_tag_commit=""
+          while IFS=$'\t' read -r remote_sha remote_ref; do
+            case "$remote_ref" in
+              "refs/tags/$RELEASE_TAG") direct_tag_commit="$remote_sha" ;;
+              "refs/tags/$RELEASE_TAG^{}") peeled_tag_commit="$remote_sha" ;;
+            esac
+          done < <(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")
+          remote_tag_commit="${peeled_tag_commit:-$direct_tag_commit}"
+
+          if [ -z "$remote_tag_commit" ] ||
+             [ "$local_commit" != "$local_tag_commit" ] ||
+             [ "$local_commit" != "$remote_tag_commit" ]; then
+            echo "Release tag does not resolve to the checked-out commit." >&2
             exit 1
           fi
 
@@ -70,15 +91,153 @@ jobs:
       - name: Checksums
         run: |
           cd app/build/outputs/apk/release
-          for apk in *.apk; do
-            sha256sum "$apk" > "$apk.sha256"
-          done
+          shopt -s nullglob
+          apks=(*.apk)
+          if [ "${#apks[@]}" -ne 1 ] || [ "${apks[0]:-}" != "app-release.apk" ]; then
+            echo "Expected exactly app-release.apk, found: ${apks[*]:-(none)}" >&2
+            exit 1
+          fi
+          sha256sum app-release.apk > app-release.apk.sha256
+          sidecars=(*.sha256)
+          if [ "${#sidecars[@]}" -ne 1 ] || [ "${sidecars[0]:-}" != "app-release.apk.sha256" ]; then
+            echo "Expected exactly app-release.apk.sha256." >&2
+            exit 1
+          fi
+          sha256sum --check --strict app-release.apk.sha256
 
-      - name: Publish GitHub Release
+      - name: Create draft GitHub Release
+        id: draft_release
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          draft: true
           prerelease: ${{ contains((github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name), '-') }}
+          fail_on_unmatched_files: true
           files: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/apk/release/*.sha256
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/app-release.apk.sha256
+
+      - name: Verify draft release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.draft_release.outputs.id }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          if ! [[ "$RELEASE_ID" =~ ^[0-9]+$ ]]; then
+            echo "Draft release ID is invalid." >&2
+            exit 1
+          fi
+
+          release_dir="$PWD/app/build/outputs/apk/release"
+          verify_dir="$RUNNER_TEMP/paruchan-draft-$RELEASE_ID"
+          rm -rf "$verify_dir"
+          mkdir -p "$verify_dir"
+
+          digests_ready=false
+          for _ in {1..10}; do
+            release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
+            if jq -e --arg tag "$RELEASE_TAG" '
+              .tag_name == $tag and
+              .draft == true and
+              .immutable == false and
+              ([.assets[].name] | sort) == ["app-release.apk", "app-release.apk.sha256"] and
+              (.assets | all(.[];
+                .state == "uploaded" and
+                (.digest | type == "string" and test("^sha256:[0-9a-f]{64}$"))
+              ))
+            ' <<< "$release_json" >/dev/null; then
+              digests_ready=true
+              break
+            fi
+            sleep 3
+          done
+          if [ "$digests_ready" != true ]; then
+            echo "Draft release metadata or asset digests did not reach the required state." >&2
+            exit 1
+          fi
+
+          for name in app-release.apk app-release.apk.sha256; do
+            asset_id="$(jq -r --arg name "$name" '.assets[] | select(.name == $name) | .id' <<< "$release_json")"
+            api_digest="$(jq -r --arg name "$name" '.assets[] | select(.name == $name) | .digest' <<< "$release_json")"
+            gh api -H 'Accept: application/octet-stream' \
+              "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" > "$verify_dir/$name"
+            cmp --silent "$release_dir/$name" "$verify_dir/$name"
+            read -r downloaded_sha _ < <(sha256sum "$verify_dir/$name")
+            if [ "$api_digest" != "sha256:$downloaded_sha" ]; then
+              echo "GitHub digest mismatch for $name." >&2
+              exit 1
+            fi
+          done
+          (
+            cd "$verify_dir"
+            sha256sum --check --strict app-release.apk.sha256
+          )
+
+      - name: Publish immutable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.draft_release.outputs.id }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          prerelease=false
+          make_latest=true
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            prerelease=true
+            make_latest=false
+          fi
+
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -F draft=false \
+            -F prerelease="$prerelease" \
+            -f make_latest="$make_latest" >/dev/null
+
+          immutable=false
+          for _ in {1..10}; do
+            release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
+            if jq -e --arg tag "$RELEASE_TAG" --argjson prerelease "$prerelease" '
+              .tag_name == $tag and
+              .draft == false and
+              .prerelease == $prerelease and
+              .immutable == true and
+              ([.assets[].name] | sort) == ["app-release.apk", "app-release.apk.sha256"] and
+              (.assets | all(.[];
+                .state == "uploaded" and
+                (.digest | type == "string" and test("^sha256:[0-9a-f]{64}$"))
+              ))
+            ' <<< "$release_json" >/dev/null; then
+              immutable=true
+              break
+            fi
+            sleep 3
+          done
+          if [ "$immutable" != true ]; then
+            echo "Published release did not become immutable." >&2
+            exit 1
+          fi
+
+          for name in app-release.apk app-release.apk.sha256; do
+            api_digest="$(jq -r --arg name "$name" '.assets[] | select(.name == $name) | .digest' <<< "$release_json")"
+            read -r local_sha _ < <(sha256sum "app/build/outputs/apk/release/$name")
+            if [ "$api_digest" != "sha256:$local_sha" ]; then
+              echo "Published GitHub digest mismatch for $name." >&2
+              exit 1
+            fi
+          done
+
+          if [ "$make_latest" = true ]; then
+            latest=false
+            for _ in {1..10}; do
+              latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+              if [ "$latest_tag" = "$RELEASE_TAG" ]; then
+                latest=true
+                break
+              fi
+              sleep 3
+            done
+            if [ "$latest" != true ]; then
+              echo "Published release is not latest." >&2
+              exit 1
+            fi
+          fi
+
+          jq -r '.html_url' <<< "$release_json"
